@@ -21,8 +21,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -184,14 +185,23 @@ class MainActivity : ComponentActivity() {
                         },
                     )
 
-                    // Entry point to the offline on-device AI assistant (chat + code-gen + build-error
-                    // auto-fix — see AiChatActivity). A floating button rather than a menu item keeps it
-                    // reachable from anywhere in the IDE without touching RakshaAiApp's own navigation.
-                    FloatingActionButton(
-                        onClick = { startActivity(Intent(this@MainActivity, AiChatActivity::class.java)) },
+                    var showAi by remember { mutableStateOf(false) }
+
+                    // Entry point to the Rakhsha AI assistant — embedded in this same Activity/window (not
+                    // a separate screen) so it has direct access to `b: IdeBackend` for inserting AI-written
+                    // code into the project and reading live build errors. Labeled "AI" (an extended FAB,
+                    // not a bare icon) so it reads clearly as the assistant entry point, not a generic action.
+                    ExtendedFloatingActionButton(
+                        onClick = { showAi = true },
                         modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
-                    ) {
-                        Icon(Icons.Filled.Build, contentDescription = "Rakhsha AI Assistant")
+                        icon = { Icon(Icons.Filled.Build, contentDescription = null) },
+                        text = { Text("AI") },
+                    )
+
+                    if (showAi) {
+                        Surface(modifier = Modifier.fillMaxSize()) {
+                            RakshaAiAssistantOverlay(backend = b, onClose = { showAi = false })
+                        }
                     }
                 }
 
@@ -347,4 +357,257 @@ private fun Splash(message: String) {
             )
         }
     }
+}
+
+/** Where the AI assistant's connection settings (mode, model path or provider+API key) are remembered
+ *  across app restarts, so the user doesn't have to re-pick a model / re-enter an API key every time. */
+private const val AI_PREFS = "rakshaai_ai_prefs"
+private const val AI_PREF_MODE = "mode"
+private const val AI_PREF_MODEL_PATH = "model_path"
+private const val AI_PREF_PROVIDER = "provider"
+private const val AI_PREF_API_KEY = "api_key"
+private const val AI_CHAT_HISTORY_FILE = "ai_chat_history.json"
+
+private fun loadSavedChatMessages(context: android.content.Context): List<dev.ide.ai.ChatMessage> {
+    val file = File(context.filesDir, AI_CHAT_HISTORY_FILE)
+    if (!file.exists()) return emptyList()
+    return try {
+        val arr = org.json.JSONArray(file.readText())
+        (0 until arr.length()).map { i ->
+            val o = arr.getJSONObject(i)
+            dev.ide.ai.ChatMessage(dev.ide.ai.ChatMessage.Role.valueOf(o.getString("role")), o.getString("content"))
+        }
+    } catch (e: Exception) {
+        emptyList()
+    }
+}
+
+private fun saveChatMessages(context: android.content.Context, messages: List<dev.ide.ai.ChatMessage>) {
+    try {
+        val arr = org.json.JSONArray()
+        messages.forEach { m -> arr.put(org.json.JSONObject().put("role", m.role.name).put("content", m.content)) }
+        File(context.filesDir, AI_CHAT_HISTORY_FILE).writeText(arr.toString())
+    } catch (e: Exception) {
+        // Best-effort — losing chat history on a write failure isn't worth crashing over.
+    }
+}
+
+/**
+ * The Rakhsha AI assistant, embedded in [MainActivity]'s own window so it can act on the real,
+ * already-open project via [backend] (insert AI-written code into a file, read live build errors —
+ * see [dev.ide.ui.ai.AiChatScreen]). Three steps: pick a mode (offline on-device vs an online cloud
+ * provider), connect (model file / API key), then chat.
+ *
+ * Connection settings and the chat transcript persist across app restarts (see [AI_PREFS] /
+ * [AI_CHAT_HISTORY_FILE]): reopening this overlay after a previous session reconnects automatically
+ * instead of starting from the mode-selection screen again, and the prior conversation is still there.
+ */
+@Composable
+private fun RakshaAiAssistantOverlay(backend: IdeBackend, onClose: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val prefs = remember { context.getSharedPreferences(AI_PREFS, android.content.Context.MODE_PRIVATE) }
+
+    var mode by remember { mutableStateOf<AiMode?>(null) }
+    var status by remember { mutableStateOf("") }
+    var apiKeyInput by remember { mutableStateOf("") }
+    var assistant by remember { mutableStateOf<dev.ide.ai.AiAssistant?>(null) }
+    var isReady by remember { mutableStateOf(false) }
+    var savedMessages by remember { mutableStateOf<List<dev.ide.ai.ChatMessage>>(emptyList()) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+
+    // On first open, restore the saved chat transcript and — if a model/API key was connected before —
+    // reconnect automatically instead of showing the mode-selection screen again.
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        savedMessages = withContext(Dispatchers.IO) { loadSavedChatMessages(context) }
+
+        val savedMode = prefs.getString(AI_PREF_MODE, null)?.let { runCatching { AiMode.valueOf(it) }.getOrNull() }
+        if (savedMode == null) return@LaunchedEffect
+        mode = savedMode
+        status = "Reconnecting…"
+        try {
+            when (savedMode) {
+                AiMode.OFFLINE -> {
+                    val path = prefs.getString(AI_PREF_MODEL_PATH, null)
+                    if (path != null && File(path).exists()) {
+                        val a = dev.ide.ai.impl.LlamaCppAssistant()
+                        withContext(Dispatchers.IO) { a.loadModel(path) }
+                        assistant = a
+                        isReady = a.isReady
+                        status = if (isReady) "Model loaded — ready to chat." else "Saved model failed to reload."
+                    } else {
+                        status = "" // saved model file is gone — fall back to manual pick
+                    }
+                }
+                else -> {
+                    val savedProvider = prefs.getString(AI_PREF_PROVIDER, null)
+                        ?.let { runCatching { dev.ide.ai.online.OnlineProvider.valueOf(it) }.getOrNull() }
+                    val savedKey = prefs.getString(AI_PREF_API_KEY, null)
+                    if (savedProvider != null && !savedKey.isNullOrBlank()) {
+                        val a = dev.ide.ai.online.OnlineAssistant(savedProvider)
+                        a.loadModel(savedKey)
+                        assistant = a
+                        isReady = a.isReady
+                        status = if (isReady) "Connected — ready to chat." else "Saved connection failed."
+                    } else {
+                        status = ""
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            status = "" // reconnect failed silently — user can just reconnect manually below
+        }
+    }
+
+    // Free native memory / drop the connection when the overlay is closed or the Activity is destroyed.
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose {
+            val a = assistant
+            if (a != null && a.isReady) {
+                kotlinx.coroutines.runBlocking { a.unloadModel() }
+            }
+        }
+    }
+
+    val pickModel = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            status = "Copying model into app storage…"
+            val localFile = withContext(Dispatchers.IO) {
+                val name = context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+                    ?.use { c -> if (c.moveToFirst()) c.getString(c.getColumnIndexOrThrow(OpenableColumns.DISPLAY_NAME)) else null }
+                    ?: "model.gguf"
+                val outFile = File(context.filesDir, "models").apply { mkdirs() }.resolve(name)
+                try {
+                    context.contentResolver.openInputStream(uri)?.use { input ->
+                        java.io.FileOutputStream(outFile).use { output -> input.copyTo(output) }
+                    }
+                    outFile
+                } catch (e: Exception) {
+                    null
+                }
+            }
+            if (localFile == null) {
+                status = "Failed to read the selected file."
+                return@launch
+            }
+            status = "Loading model (this can take 10-30s)…"
+            try {
+                val a = dev.ide.ai.impl.LlamaCppAssistant()
+                a.loadModel(localFile.absolutePath)
+                assistant = a
+                isReady = a.isReady
+                status = if (isReady) "Model loaded — ready to chat." else "Model failed to load."
+                if (isReady) {
+                    prefs.edit()
+                        .putString(AI_PREF_MODE, AiMode.OFFLINE.name)
+                        .putString(AI_PREF_MODEL_PATH, localFile.absolutePath)
+                        .apply()
+                }
+            } catch (e: Exception) {
+                status = "Error loading model: ${e.message}"
+            }
+        }
+    }
+
+    Column(modifier = Modifier.fillMaxSize().androidx.compose.foundation.layout.safeDrawingPadding().padding(16.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text("AI", style = MaterialTheme.typography.headlineMedium)
+            androidx.compose.material3.TextButton(onClick = onClose) { Text("Close") }
+        }
+
+        when {
+            mode == null -> Column(modifier = Modifier.padding(top = 16.dp)) {
+                Text(
+                    "Offline runs entirely on this device, no internet or API key needed — but needs a downloaded .gguf model file. Online modes need your own API key and an internet connection.",
+                    modifier = Modifier.padding(bottom = 16.dp),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                AiMode.values().forEach { m ->
+                    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                        androidx.compose.material3.RadioButton(selected = false, onClick = { mode = m })
+                        Text(m.label, modifier = Modifier.padding(start = 8.dp, top = 12.dp))
+                    }
+                }
+            }
+
+            !isReady -> Column(modifier = Modifier.padding(top = 16.dp)) {
+                Text(mode!!.label, style = MaterialTheme.typography.titleMedium)
+                if (status.isNotBlank()) {
+                    Surface(modifier = Modifier.padding(top = 12.dp, bottom = 12.dp)) { Text(status) }
+                }
+                when {
+                    status.startsWith("Loading") || status.startsWith("Copying") || status.startsWith("Connecting") ->
+                        CircularProgressIndicator()
+
+                    mode == AiMode.OFFLINE -> androidx.compose.material3.Button(
+                        onClick = { pickModel.launch(arrayOf("application/octet-stream", "*/*")) }
+                    ) { Text("Pick a .gguf model file") }
+
+                    else -> Column {
+                        androidx.compose.material3.OutlinedTextField(
+                            value = apiKeyInput,
+                            onValueChange = { apiKeyInput = it },
+                            label = { Text("${mode!!.label.substringAfter("— ")} API key") },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        androidx.compose.material3.Button(
+                            enabled = apiKeyInput.isNotBlank(),
+                            modifier = Modifier.padding(top = 12.dp),
+                            onClick = {
+                                scope.launch {
+                                    status = "Connecting…"
+                                    try {
+                                        val provider = when (mode) {
+                                            AiMode.GEMINI -> dev.ide.ai.online.OnlineProvider.GEMINI
+                                            AiMode.OPENAI -> dev.ide.ai.online.OnlineProvider.OPENAI
+                                            AiMode.CLAUDE -> dev.ide.ai.online.OnlineProvider.CLAUDE
+                                            else -> error("unreachable")
+                                        }
+                                        val a = dev.ide.ai.online.OnlineAssistant(provider)
+                                        a.loadModel(apiKeyInput)
+                                        assistant = a
+                                        isReady = a.isReady
+                                        status = if (isReady) "Connected — ready to chat." else "Failed to connect."
+                                        if (isReady) {
+                                            prefs.edit()
+                                                .putString(AI_PREF_MODE, mode!!.name)
+                                                .putString(AI_PREF_PROVIDER, provider.name)
+                                                .putString(AI_PREF_API_KEY, apiKeyInput)
+                                                .apply()
+                                        }
+                                    } catch (e: Exception) {
+                                        status = "Error: ${e.message}"
+                                    }
+                                }
+                            },
+                        ) { Text("Connect") }
+                    }
+                }
+                androidx.compose.material3.Button(
+                    onClick = { mode = null; status = ""; apiKeyInput = "" },
+                    modifier = Modifier.padding(top = 24.dp),
+                ) { Text("Back") }
+            }
+
+            else -> assistant?.let { a ->
+                dev.ide.ui.ai.AiChatScreen(
+                    assistant = a,
+                    backend = backend,
+                    modifier = Modifier.fillMaxSize(),
+                    initialMessages = savedMessages,
+                    onMessagesChanged = { msgs -> scope.launch(Dispatchers.IO) { saveChatMessages(context, msgs) } },
+                )
+            }
+        }
+    }
+}
+
+private enum class AiMode(val label: String) {
+    OFFLINE("Offline (on-device model)"),
+    GEMINI("Online — Google Gemini"),
+    OPENAI("Online — OpenAI"),
+    CLAUDE("Online — Anthropic Claude"),
 }

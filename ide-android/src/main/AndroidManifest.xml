@@ -105,15 +105,6 @@
                 <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
             </intent-filter>
         </provider>
-
-        <!-- Standalone offline AI assistant screen (model picker + chat). Launched from MainActivity's
-             floating "Rakhsha AI" button — see MainActivity.kt — not its own launcher icon, so the app
-             presents as a single icon/experience. -->
-        <activity
-                android:name=".AiChatActivity"
-                android:exported="false"
-                android:label="Rakhsha AI Chat"
-                android:windowSoftInputMode="adjustResize" />
     </application>
 
 </manifest>
