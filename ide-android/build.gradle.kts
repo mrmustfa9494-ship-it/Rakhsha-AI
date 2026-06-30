@@ -621,6 +621,7 @@ dependencies {
     implementation(compose.runtime)
     implementation(compose.foundation)
     implementation(compose.material3)
+    implementation(compose.materialIconsExtended) // Icons.Filled.Build, used by the Rakhsha AI floating button
     implementation(compose.ui)
     implementation(libs.androidx.activity.compose)
     // FileProvider (androidx.core.content.FileProvider) — hands other apps content:// URIs to our
