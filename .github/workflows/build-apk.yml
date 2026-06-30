@@ -25,6 +25,13 @@ jobs:
       - name: Accept SDK licenses
         run: yes | sdkmanager --licenses || true
 
+      - name: Install NDK + CMake (for the ai-assistant-impl native/llama.cpp build)
+        run: |
+          sdkmanager --install "ndk;27.0.12077973" "cmake;3.22.1"
+
+      - name: Init git submodules (llama.cpp)
+        run: git submodule update --init --recursive
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 

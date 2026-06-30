@@ -48,7 +48,10 @@ kotlin {
         // preview pane + its Compose-backed RCanvas live here; commonMain reaches them via an expect/actual.
         val jvmShared = create("jvmShared") {
             dependsOn(getByName("commonMain"))
-            dependencies { implementation(project(":layout-preview-api")) }
+            dependencies {
+                implementation(project(":layout-preview-api"))
+                implementation(project(":ai-assistant-api")) // AiChatScreen.kt
+            }
         }
         getByName("desktopMain").dependsOn(jvmShared)
         getByName("androidMain").dependsOn(jvmShared)

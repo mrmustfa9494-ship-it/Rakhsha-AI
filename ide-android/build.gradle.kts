@@ -634,6 +634,9 @@ dependencies {
     implementation(project(":interp-core"))
     implementation(project(":interp-compose"))
 
+    // Offline on-device AI assistant ("Rakhsha AI" chat + code-gen + build-error auto-fix).
+    implementation(project(":ai-assistant-impl"))
+
     // On-device instrumentation: the Kotlin-compiler-on-ART discovery spike.
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)

@@ -75,5 +75,8 @@ if (System.getenv("CI_CORE_ONLY") != "true") {
         ":ide-core",
         ":ide-desktop",
         ":ide-android",
+        ":ai-assistant-api", // offline on-device AI assistant: chat + "write code" + "fix build errors" SPI
+        ":ai-assistant-impl", // llama.cpp-backed implementation (JNI bridge, native model loading/inference)
+        ":ai-assistant", // on-device offline AI (llama.cpp JNI bridge): chat UI + auto build-error-fix
     )
 }
