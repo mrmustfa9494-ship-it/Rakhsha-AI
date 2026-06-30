@@ -9,6 +9,7 @@ plugins {
 dependencies {
     api(project(":build-api"))     // to consume BuildDiagnostic for the "fix build errors" feature
     api(project(":analysis-api"))  // to consume Diagnostic + QuickFix for the "fix code" feature
+    api(libs.kotlinx.coroutines.core) // Flow, used by AiAssistant.chat()'s streaming return type
 
     testImplementation(kotlin("test"))
 }
