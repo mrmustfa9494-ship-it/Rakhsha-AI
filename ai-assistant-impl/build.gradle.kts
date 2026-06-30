@@ -4,7 +4,8 @@
 // the IDE talks to ai-assistant-api.
 plugins {
     id("com.android.library")
-    kotlin("android")
+    // No kotlin("android") plugin: AGP 9.0+ builds Kotlin in automatically — applying the old plugin
+    // alongside it is now an error ("no longer required for Kotlin support since AGP 9.0").
 }
 
 android {
