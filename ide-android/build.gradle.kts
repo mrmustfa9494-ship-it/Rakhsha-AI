@@ -637,6 +637,8 @@ dependencies {
 
     // Offline on-device AI assistant ("Rakhsha AI" chat + code-gen + build-error auto-fix).
     implementation(project(":ai-assistant-impl"))
+    // Online/cloud AI assistant mode (Gemini / OpenAI / Claude) — user-selectable alternative to offline.
+    implementation(project(":ai-assistant-online"))
 
     // On-device instrumentation: the Kotlin-compiler-on-ART discovery spike.
     androidTestImplementation(libs.androidx.test.ext.junit)
