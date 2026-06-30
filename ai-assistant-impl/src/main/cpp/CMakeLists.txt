@@ -37,12 +37,10 @@ add_library(rakshaai_llama_jni SHARED
 
 target_link_libraries(rakshaai_llama_jni
     llama
-    common
     android
     log
 )
 
 target_include_directories(rakshaai_llama_jni PRIVATE
     llama.cpp/include
-    llama.cpp/common
 )
