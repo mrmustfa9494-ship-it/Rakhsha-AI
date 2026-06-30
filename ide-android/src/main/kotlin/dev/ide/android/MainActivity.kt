@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material3.CircularProgressIndicator
@@ -510,7 +511,7 @@ private fun RakshaAiAssistantOverlay(backend: IdeBackend, onClose: () -> Unit) {
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize().androidx.compose.foundation.layout.safeDrawingPadding().padding(16.dp)) {
+    Column(modifier = Modifier.fillMaxSize().safeDrawingPadding().padding(16.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
