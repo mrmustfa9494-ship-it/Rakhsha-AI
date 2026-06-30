@@ -45,6 +45,7 @@ import dev.ide.ui.backend.FileActions
 import dev.ide.ui.backend.IdeBackend
 import dev.ide.ui.backend.TreeNode
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
