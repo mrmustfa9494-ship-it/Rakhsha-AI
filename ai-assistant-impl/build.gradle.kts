@@ -47,5 +47,4 @@ dependencies {
     api(project(":ai-assistant-api"))
     implementation(project(":platform-core"))
     implementation(libs.kotlinx.coroutines.core)
-    implementation(libs.kotlinx.coroutines.android)
 }
