@@ -13,7 +13,7 @@ import java.io.File
 import java.io.FileNotFoundException
 
 /**
- * Surfaces CodeAssist's whole external app directory (`getExternalFilesDir(null)`) to the system Files app
+ * Surfaces Rakhsha AI IDE's whole external app directory (`getExternalFilesDir(null)`) to the system Files app
  * and any SAF-aware file manager as a browsable, **read/write** root — without the All-Files-Access
  * permission. The exposed tree is the entire external files dir: the new app home (`codeassist/` with its
  * projects, the SDK `android.jar`, the debug keystore, the kotlinc home) AND sibling data from older app
@@ -41,7 +41,7 @@ class ProjectsDocumentsProvider : DocumentsProvider() {
         cursor.newRow().apply {
             add(Root.COLUMN_ROOT_ID, rootId)
             add(Root.COLUMN_DOCUMENT_ID, rootId)
-            add(Root.COLUMN_TITLE, "CodeAssist")
+            add(Root.COLUMN_TITLE, "Rakhsha AI IDE")
             add(Root.COLUMN_SUMMARY, "App files")
             // CREATE → other apps may add files here; IS_CHILD → the system can verify tree membership;
             // LOCAL_ONLY → on-device storage; SUPPORTS_SEARCH → the Files-app search box works.
@@ -141,7 +141,7 @@ class ProjectsDocumentsProvider : DocumentsProvider() {
         }
         cursor.newRow().apply {
             add(Document.COLUMN_DOCUMENT_ID, file.absolutePath)
-            add(Document.COLUMN_DISPLAY_NAME, if (file.absolutePath == rootId) "CodeAssist" else file.name)
+            add(Document.COLUMN_DISPLAY_NAME, if (file.absolutePath == rootId) "Rakhsha AI IDE" else file.name)
             add(Document.COLUMN_SIZE, file.length())
             add(Document.COLUMN_MIME_TYPE, mimeTypeOf(file))
             add(Document.COLUMN_LAST_MODIFIED, file.lastModified())

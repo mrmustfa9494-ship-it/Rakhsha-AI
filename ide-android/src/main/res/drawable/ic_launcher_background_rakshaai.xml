@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Rakhsha AI IDE launcher icon background — a solid brand-purple plate behind the foreground mark,
+     replacing the old dark-grey CodeAssist background. A plain color drawable (not a PNG) so it's
+     trivial to re-tint later without re-exporting raster assets. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="#5B3FA0" />
+</shape>

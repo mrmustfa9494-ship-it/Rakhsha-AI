@@ -2,13 +2,13 @@
 <resources>
     <string name="projects">Projects</string>
     <string name="a_new_build_system">A new build system</string>
-    <string name="a_new_build_system_content"><![CDATA[CodeAssist has been rebuilt with a new on-device build system. It uses its own project configuration, so projects from a previous version aren't compatible and won't open automatically.
+    <string name="a_new_build_system_content"><![CDATA[Rakhsha AI IDE has been rebuilt with a new on-device build system. It uses its own project configuration, so projects from a previous version aren't compatible and won't open automatically.
 
 Back up your projects to a .zip now — your source files stay safe, and you can re-add them to a new project.]]></string>
     <string name="preparing_backup">Preparing backup…</string>
     <string name="backup_projects">Back up projects</string>
     <string name="got_it">Got it</string>
-    <string name="help_improve_codeassist">Help improve CodeAssist</string>
+    <string name="help_improve_codeassist">Help improve Rakhsha AI IDE</string>
     <string name="help_improve_codeassist_content"><![CDATA[Share anonymous performance data so we can see what's slow and what's failing — and fix the right things.
 
 We collect: your app version and device model, how long builds, indexing, and code completion take, build success/failure, and scrubbed crash reports.
@@ -46,14 +46,14 @@ We never collect your code, file or project names, which features you use, or an
     <string name="your_files_content">Projects live in app storage you can open from any file manager — drop in icons, layouts, or assets, or edit from a PC. No special permissions, nothing hidden.</string>
     <string name="jetpack_compose">Jetpack Compose</string>
     <string name="jetpack_compose_title">Rebuilt on Jetpack Compose.</string>
-    <string name="jetpack_compose_content">A faster, smoother CodeAssist — native Compose throughout, with live @Preview.</string>
+    <string name="jetpack_compose_content">A faster, smoother Rakhsha AI IDE — native Compose throughout, with live @Preview.</string>
     <string name="create_your_first_project">Create your first project</string>
     <string name="open_a_project">Open a project or start a new one.</string>
     <string name="new_project">New Project</string>
     <string name="new_project_content">Android app, Java console app, library…</string>
     <string name="join_the_community">Join the community</string>
     <string name="join_the_community_content">Chat, get help, and share what you build on Discord.</string>
-    <string name="support_title">Support CodeAssist</string>
+    <string name="support_title">Support Rakhsha AI IDE</string>
     <string name="support_content">Built in my free time and kept free for everyone. If it helps you, a sponsor or a star means a lot.</string>
     <string name="support_chip_free">100% free</string>
     <string name="support_chip_no_ads">No ads</string>
@@ -69,7 +69,7 @@ We never collect your code, file or project names, which features you use, or an
     <string name="beta_notice">You're on the %1$s</string>
     <string name="beta_notice_content">Some features may be incomplete or change. We'd love your feedback — tell us what's missing or broken.</string>
     <string name="submit_suggestion">Submit suggestions</string>
-    <string name="your_codeassist_files">Your CodeAssist files</string>
+    <string name="your_codeassist_files">Your Rakhsha AI IDE files</string>
     <string name="your_codeassist_files_content">Open this folder in any file manager to browse your projects (including any from older versions, under "Projects"), add icons or assets, or edit from a PC.</string>
     <string name="open_in_the_file_manager">Open in file manager</string>
     <string name="choose_start_point">Choose a starting point.</string>

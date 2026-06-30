@@ -18,7 +18,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -166,21 +170,33 @@ class MainActivity : ComponentActivity() {
 
             val b = backend
             when {
-                b != null -> RakshaAiApp(
-                    b,
-                    fileActions = fileActions,
-                    // On-device Compose preview: render @Preview composables through the interpreter. The
-                    // backend instance is stable across project switches (it swaps services internally), so
-                    // one host suffices.
-                    composePreviewHost = (b as? IdeServicesBackend)?.let {
-                        AndroidComposePreviewHost(
-                            it
-                        )
-                    },
-                )
+                b != null -> Box(modifier = Modifier.fillMaxSize()) {
+                    RakshaAiApp(
+                        b,
+                        fileActions = fileActions,
+                        // On-device Compose preview: render @Preview composables through the interpreter. The
+                        // backend instance is stable across project switches (it swaps services internally), so
+                        // one host suffices.
+                        composePreviewHost = (b as? IdeServicesBackend)?.let {
+                            AndroidComposePreviewHost(
+                                it
+                            )
+                        },
+                    )
+
+                    // Entry point to the offline on-device AI assistant (chat + code-gen + build-error
+                    // auto-fix — see AiChatActivity). A floating button rather than a menu item keeps it
+                    // reachable from anywhere in the IDE without touching RakshaAiApp's own navigation.
+                    FloatingActionButton(
+                        onClick = { startActivity(Intent(this@MainActivity, AiChatActivity::class.java)) },
+                        modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
+                    ) {
+                        Icon(Icons.Filled.Build, contentDescription = "Rakhsha AI Assistant")
+                    }
+                }
 
                 error != null -> Splash("Failed to start: $error")
-                else -> Splash("Starting CodeAssist…")
+                else -> Splash("Starting Rakhsha AI IDE…")
             }
         }
     }
@@ -248,7 +264,7 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * Open the system Files app on CodeAssist's storage (served by [ProjectsDocumentsProvider]) so the user
+     * Open the system Files app on Rakhsha AI IDE's storage (served by [ProjectsDocumentsProvider]) so the user
      * can browse/manage there. Best-effort across OEM file managers: first tries to deep-link to [path]'s
      * own directory (a document-URI VIEW — DocumentsUI honors it; our doc ids are absolute paths), then the
      * provider root, then a generic Files launch, and finally explains where to look.
@@ -272,7 +288,7 @@ class MainActivity : ComponentActivity() {
         val browse = Intent("android.provider.action.BROWSE", rootUri)
         runCatching { startActivity(browse) }.getOrElse {
             Toast.makeText(
-                this, "Open the Files app → CodeAssist to browse your projects", Toast.LENGTH_LONG
+                this, "Open the Files app → Rakhsha AI IDE to browse your projects", Toast.LENGTH_LONG
             ).show()
         }
     }

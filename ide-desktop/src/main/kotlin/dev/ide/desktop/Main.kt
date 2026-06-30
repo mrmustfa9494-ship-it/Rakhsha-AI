@@ -14,14 +14,14 @@ import dev.ide.ui.RakshaAiApp
 import java.nio.file.Path
 
 /**
- * Launches the CodeAssist desktop IDE. Projects live under a real projects root (`~/.codeassist/projects`
+ * Launches the Rakhsha AI IDE desktop IDE. Projects live under a real projects root (`~/.codeassist/projects`
  * by default, one workspace dir each); a [ProjectManager] creates/opens/lists them and the IDE supports
  * live in-session switching. The IDE starts on the project picker; a first-run user creates a project from
  * there (or via the onboarding tour's final step).
  */
 fun main(args: Array<String>) {
     System.setProperty("apple.awt.application.appearance", "system")
-    System.setProperty("apple.awt.application.name", "CodeAssist")
+    System.setProperty("apple.awt.application.name", "Rakhsha AI IDE")
     // Survive an unexpected exception on the AWT event thread (e.g. the live-preview interpreter crashing deep
     // in Compose's measure/semantics pass on a half-typed buffer) instead of taking the whole IDE down.
     AwtThreadGuard.install()
@@ -43,7 +43,7 @@ fun main(args: Array<String>) {
         Window(
             onCloseRequest = ::exitApplication,
             state = state,
-            title = "CodeAssist",
+            title = "Rakhsha AI IDE",
         ) {
             RakshaAiApp(
                 backend,

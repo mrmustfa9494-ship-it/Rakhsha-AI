@@ -106,19 +106,14 @@
             </intent-filter>
         </provider>
 
-        <!-- Standalone offline AI assistant screen (model picker + chat). Shown as its own launcher icon
-             for now so it's easy to find/test independently; once wired into MainActivity's UI as an
-             in-app screen (TODO), this can go back to exported=false / lose the LAUNCHER intent-filter. -->
+        <!-- Standalone offline AI assistant screen (model picker + chat). Launched from MainActivity's
+             floating "Rakhsha AI" button — see MainActivity.kt — not its own launcher icon, so the app
+             presents as a single icon/experience. -->
         <activity
                 android:name=".AiChatActivity"
-                android:exported="true"
+                android:exported="false"
                 android:label="Rakhsha AI Chat"
-                android:windowSoftInputMode="adjustResize">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
+                android:windowSoftInputMode="adjustResize" />
     </application>
 
 </manifest>

@@ -112,7 +112,7 @@ internal class StoreBackend(private val ctx: BackendContext) : StoreService {
                 summary = "A Material 3 notes app with a list/detail flow.",
                 description = "A complete note-taking app: a Material 3 list/detail flow, swipe-to-delete, and " +
                     "local persistence. A good tour of state handling and navigation.",
-                category = "Android", iconId = "module.android", author = "CodeAssist",
+                category = "Android", iconId = "module.android", author = "Rakhsha AI IDE",
                 tags = listOf("Material 3", "CRUD", "Navigation"), accentColor = 0xFF3DDC84, available = false,
             ),
             UiStoreItem(
@@ -120,7 +120,7 @@ internal class StoreBackend(private val ctx: BackendContext) : StoreService {
                 summary = "Fetches a forecast over HTTP and renders it in Compose.",
                 description = "A small Compose app that loads a forecast over HTTP and renders an hourly + daily " +
                     "view. Shows networking, loading/error states, and lists.",
-                category = "Android", iconId = "module.android", author = "CodeAssist",
+                category = "Android", iconId = "module.android", author = "Rakhsha AI IDE",
                 tags = listOf("Compose", "Networking", "Coroutines"), accentColor = 0xFF3FBDD9, available = false,
             ),
             UiStoreItem(
@@ -128,7 +128,7 @@ internal class StoreBackend(private val ctx: BackendContext) : StoreService {
                 summary = "A classic Snake game drawn on a Compose canvas.",
                 description = "The classic Snake game: a game loop, gesture input, and Canvas drawing. A compact " +
                     "example of frame-driven UI.",
-                category = "Games", iconId = "kotlin", author = "CodeAssist",
+                category = "Games", iconId = "kotlin", author = "Rakhsha AI IDE",
                 tags = listOf("Canvas", "Game loop", "Kotlin"), accentColor = 0xFFB487F7, available = false,
             ),
             UiStoreItem(
@@ -136,7 +136,7 @@ internal class StoreBackend(private val ctx: BackendContext) : StoreService {
                 summary = "An expression-parsing calculator, console + tests.",
                 description = "A Java console calculator with an expression parser and a JUnit test suite. A clean " +
                     "starting point for parsing and unit testing.",
-                category = "Java", iconId = "java", author = "CodeAssist",
+                category = "Java", iconId = "java", author = "Rakhsha AI IDE",
                 tags = listOf("Parsing", "JUnit", "Console"), available = false,
             ),
         )

@@ -2,13 +2,13 @@
 <resources>
     <string name="projects">项目</string>
     <string name="a_new_build_system">一个新的构建系统</string>
-    <string name="a_new_build_system_content"><![CDATA[CodeAssist 已使用全新的设备端构建系统进行了重建。它使用自身的项目配置，因此旧版本的项目不兼容，无法自动打开。
+    <string name="a_new_build_system_content"><![CDATA[Rakhsha AI IDE 已使用全新的设备端构建系统进行了重建。它使用自身的项目配置，因此旧版本的项目不兼容，无法自动打开。
 
 立即将您的项目备份为 .zip 文件——这样您的源文件将安全无虞，并且可以将其重新添加到新项目中。]]></string>
     <string name="preparing_backup">准备备份…</string>
     <string name="backup_projects">备份项目</string>
     <string name="got_it">知道了</string>
-    <string name="help_improve_codeassist">帮助提升 CodeAssist</string>
+    <string name="help_improve_codeassist">帮助提升 Rakhsha AI IDE</string>
     <string name="help_improve_codeassist_content">分享匿名性能数据，以便我们了解哪些环节运行缓慢或出现故障，并进行相应的修复。
 
 我们会收集以下信息：您的应用版本和设备型号、构建、索引和代码补全所需时间、构建成功/失败情况以及已清理的崩溃报告。
@@ -46,14 +46,14 @@
     <string name="your_files_content">项目文件保存在应用存储空间中，您可以使用任何文件管理器打开它们——拖放图标、布局或素材，或者在电脑上进行编辑。无需特殊权限，没有任何隐藏内容。</string>
     <string name="jetpack_compose">Jetpack Compose</string>
     <string name="jetpack_compose_title">使用 Jetpack Compose 重构。</string>
-    <string name="jetpack_compose_content">更快、更流畅的 CodeAssist——原生 Compose，支持实时 @Preview。</string>
+    <string name="jetpack_compose_content">更快、更流畅的 Rakhsha AI IDE——原生 Compose，支持实时 @Preview。</string>
     <string name="create_your_first_project">创建你的第一个项目</string>
     <string name="open_a_project">打开或创建一个项目。</string>
     <string name="new_project">新建项目</string>
     <string name="new_project_content">Android 应用, Java 控制台应用, 库…</string>
     <string name="join_the_community">加入社区</string>
     <string name="join_the_community_content">在 Discord 上聊天、获得帮助并分享你的作品。</string>
-    <string name="support_title">支持 CodeAssist</string>
+    <string name="support_title">支持 Rakhsha AI IDE</string>
     <string name="support_content">这是我利用业余时间开发的，并且对所有人免费。如果它对你有帮助，赞助或点亮 Star 对我意义重大。</string>
     <string name="support_chip_free">完全免费</string>
     <string name="support_chip_no_ads">无广告</string>
@@ -68,7 +68,7 @@
     <string name="beta_notice">软件正处于 %1$s 阶段</string>
     <string name="beta_notice_content">部分功能可能尚未完善或有所变更。我们非常欢迎您的反馈——请告诉我们哪些功能缺失或存在问题。</string>
     <string name="submit_suggestion">提交建议</string>
-    <string name="your_codeassist_files">你的 CodeAssist 文件</string>
+    <string name="your_codeassist_files">你的 Rakhsha AI IDE 文件</string>
     <string name="your_codeassist_files_content">在任何文件管理器中打开此文件夹，即可浏览您的项目（包括“项目”下的任何旧版本项目）、添加图标或资源，或从 PC 进行编辑。</string>
     <string name="open_in_the_file_manager">在文件管理器中打开</string>
     <string name="choose_start_point">选择一个起始入口。</string>

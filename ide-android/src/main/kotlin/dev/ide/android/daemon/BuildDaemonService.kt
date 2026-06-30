@@ -281,7 +281,7 @@ class BuildDaemonService : Service() {
         if (nm != null && nm.getNotificationChannel(CHANNEL_ID) == null) {
             nm.createNotificationChannel(
                 NotificationChannel(CHANNEL_ID, "Builds", NotificationManager.IMPORTANCE_LOW).apply {
-                    description = "Shown while CodeAssist is building or running your project"
+                    description = "Shown while Rakhsha AI IDE is building or running your project"
                 },
             )
         }
@@ -289,7 +289,7 @@ class BuildDaemonService : Service() {
             PendingIntent.getActivity(this, 0, it, PendingIntent.FLAG_IMMUTABLE)
         }
         return Notification.Builder(this, CHANNEL_ID)
-            .setContentTitle("CodeAssist")
+            .setContentTitle("Rakhsha AI IDE")
             .setContentText("Building…")
             .setSmallIcon(android.R.drawable.stat_notify_sync)
             .setOngoing(true)

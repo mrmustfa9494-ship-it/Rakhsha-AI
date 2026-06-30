@@ -723,7 +723,7 @@ internal fun FilesAccessMock() {
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(Ca.radius.sm)).background(Ca.colors.surface2).padding(horizontal = 10.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text(".../CodeAssist/projects", color = Ca.colors.textSecondary, fontFamily = FontFamily.Monospace, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                Text(".../Rakhsha AI IDE/projects", color = Ca.colors.textSecondary, fontFamily = FontFamily.Monospace, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                 Icon(CaIcons.copy, null, Modifier.size(14.dp), tint = Ca.colors.textTertiary)
             }
             Row(
