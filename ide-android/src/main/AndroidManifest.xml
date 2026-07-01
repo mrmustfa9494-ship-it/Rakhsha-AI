@@ -105,6 +105,13 @@
                 <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
             </intent-filter>
         </provider>
+
+        <!-- Standalone AI chat activity — separate window so llama.cpp model loading
+             never freezes the IDE's Compose UI. -->
+        <activity
+                android:name=".AiChatActivity"
+                android:exported="false"
+                android:windowSoftInputMode="adjustResize" />
     </application>
 
 </manifest>
