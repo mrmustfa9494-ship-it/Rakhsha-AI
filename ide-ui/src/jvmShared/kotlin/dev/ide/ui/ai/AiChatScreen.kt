@@ -82,8 +82,19 @@ fun AiChatScreen(
     }
     var input by remember { mutableStateOf("") }
     var isGenerating by remember { mutableStateOf(false) }
-    var targetFilePath by remember { mutableStateOf(backend.project.rootPath.trimEnd('/') + "/") }
-    onDbg("chat: rootPath read OK")
+    // IMPORTANT: backend.project is an EXPENSIVE getter — it calls services.modules()
+    // (store.workspace.projects.flatMap { it.modules }) which scans/loads the whole workspace.
+    // Reading it here during composition ran that heavy work on the main thread and FROZE the UI
+    // right after the chat screen started composing. We now start empty and fill the target path
+    // from a background thread, so composition never blocks.
+    var targetFilePath by remember { mutableStateOf("") }
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        val root = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching { backend.project.rootPath.trimEnd('/') + "/" }.getOrDefault("")
+        }
+        if (root.isNotEmpty()) targetFilePath = root
+        onDbg("chat: rootPath read OK (async)")
+    }
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     onDbg("chat: state init OK")
