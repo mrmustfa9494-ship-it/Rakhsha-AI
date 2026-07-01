@@ -402,6 +402,7 @@ private fun saveChatMessages(context: android.content.Context, messages: List<de
 }
 
 
+
 private enum class AiUiState { SELECTING, CONNECTING, CHATTING }
 
 private enum class AiMode(val label: String) {
@@ -453,7 +454,7 @@ private fun RakshaAiAssistantOverlay(backend: IdeBackend, onClose: () -> Unit) {
     val pickModel = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
-            isLoading = true; statusMsg = "Copying model…"
+            isLoading = true; statusMsg = "Copying model..."
             val localFile = withContext(Dispatchers.IO) {
                 val name = context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
                     ?.use { c -> if (c.moveToFirst()) c.getString(c.getColumnIndexOrThrow(OpenableColumns.DISPLAY_NAME)) else null }
@@ -492,7 +493,7 @@ private fun RakshaAiAssistantOverlay(backend: IdeBackend, onClose: () -> Unit) {
                     TextButton(onClick = {
                         if (uiState == AiUiState.CHATTING) uiState = AiUiState.CONNECTING
                         else { mode = null; statusMsg = ""; apiKeyInput = ""; uiState = AiUiState.SELECTING }
-                    }) { Text("← Back") }
+                    }) { Text("Back") }
                 } else { Text("  ") }
                 Text("Rakhsha AI", style = MaterialTheme.typography.titleLarge)
                 TextButton(onClick = onClose) { Text("Close") }
@@ -516,8 +517,8 @@ private fun RakshaAiAssistantOverlay(backend: IdeBackend, onClose: () -> Unit) {
                                     Text(m.label, style = MaterialTheme.typography.bodyLarge,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     Text(
-                                        if (m == AiMode.OFFLINE) "No internet needed • Needs .gguf model file"
-                                        else "Needs API key • Faster responses",
+                                        if (m == AiMode.OFFLINE) "No internet needed, needs .gguf file"
+                                        else "Needs API key, faster responses",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                                     )
@@ -536,8 +537,7 @@ private fun RakshaAiAssistantOverlay(backend: IdeBackend, onClose: () -> Unit) {
                         Surface(color = MaterialTheme.colorScheme.surfaceVariant,
                             shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
                             modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
-                            Text(statusMsg, modifier = Modifier.padding(12.dp),
-                                style = MaterialTheme.typography.bodyMedium)
+                            Text(statusMsg, modifier = Modifier.padding(12.dp))
                         }
                     }
                     if (isLoading) {
@@ -546,31 +546,21 @@ private fun RakshaAiAssistantOverlay(backend: IdeBackend, onClose: () -> Unit) {
                         AiMode.OFFLINE -> {
                             val savedPath = prefs.getString(AI_PREF_MODEL_PATH, null)
                             if (savedPath != null && File(savedPath).exists()) {
-                                Surface(color = MaterialTheme.colorScheme.surfaceVariant,
-                                    shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
-                                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
-                                    Column(modifier = Modifier.padding(12.dp)) {
-                                        Text("Previous model:", style = MaterialTheme.typography.labelMedium)
-                                        Text(File(savedPath).name, style = MaterialTheme.typography.bodyMedium)
+                                Button(onClick = {
+                                    scope.launch {
+                                        isLoading = true; statusMsg = "Loading model..."
+                                        try {
+                                            val a = dev.ide.ai.impl.LlamaCppAssistant()
+                                            withContext(Dispatchers.IO) { a.loadModel(savedPath) }
+                                            if (a.isReady) { assistant = a; uiState = AiUiState.CHATTING }
+                                            else statusMsg = "Model failed to load."
+                                        } catch (e: Exception) { statusMsg = "Error: ${e.message}" }
+                                        isLoading = false
                                     }
+                                }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                                    Text("Load: ${File(savedPath).name}")
                                 }
-                                Button(
-                                    onClick = {
-                                        scope.launch {
-                                            isLoading = true; statusMsg = "Loading model (10-30s)..."
-                                            try {
-                                                val a = dev.ide.ai.impl.LlamaCppAssistant()
-                                                withContext(Dispatchers.IO) { a.loadModel(savedPath) }
-                                                if (a.isReady) { assistant = a; uiState = AiUiState.CHATTING }
-                                                else statusMsg = "Model failed to load."
-                                            } catch (e: Exception) { statusMsg = "Error: ${e.message}" }
-                                            isLoading = false
-                                        }
-                                    },
-                                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                                ) { Text("Load model") }
                             }
-                            // Model download screen (MNN Chat style)
                             dev.ide.android.ai.ModelDownloadScreen(
                                 context = context,
                                 onModelReady = { file ->
@@ -589,7 +579,8 @@ private fun RakshaAiAssistantOverlay(backend: IdeBackend, onClose: () -> Unit) {
                                 },
                                 onPickFromFiles = { pickModel.launch(arrayOf("application/octet-stream", "*/*")) },
                             )
-                        else -> Column {
+                        }
+                        AiMode.GEMINI, AiMode.OPENAI, AiMode.CLAUDE -> Column {
                             OutlinedTextField(value = apiKeyInput, onValueChange = { apiKeyInput = it },
                                 label = { Text("${mode?.label?.substringAfter("-- ") ?: ""} API key") },
                                 modifier = Modifier.fillMaxWidth(), singleLine = true)
@@ -617,57 +608,52 @@ private fun RakshaAiAssistantOverlay(backend: IdeBackend, onClose: () -> Unit) {
                                         } catch (e: Exception) { statusMsg = "Error: ${e.message}" }
                                         isLoading = false
                                     }
-                                },
-                            ) { Text("Connect") }
+                                }) { Text("Connect") }
                         }
-                        null -> {}
+                        null -> Text("Select a mode first.")
                     }
                 }
 
-                AiUiState.CHATTING -> assistant?.let { a ->
-                    // Build the list of available models for the in-chat dropdown.
-                    // Includes all files in the models dir + any recommended models that are installed.
-                    val modelsDir = dev.ide.android.ai.modelsDir(context)
-                    val availableModels = remember(modelsDir) {
-                        modelsDir.listFiles()
-                            ?.filter { it.extension == "gguf" }
-                            ?.map { it.absolutePath to it.nameWithoutExtension }
-                            ?: emptyList()
-                    }
-                    val currentModelName = remember(prefs) {
-                        prefs.getString(AI_PREF_MODEL_PATH, null)
+                AiUiState.CHATTING -> {
+                    val a = assistant
+                    if (a != null) {
+                        val modelsDir = dev.ide.android.ai.modelsDir(context)
+                        val availableModels = remember(modelsDir) {
+                            modelsDir.listFiles()
+                                ?.filter { it.extension == "gguf" }
+                                ?.map { it.absolutePath to it.nameWithoutExtension }
+                                ?: emptyList()
+                        }
+                        val currentModelName = prefs.getString(AI_PREF_MODEL_PATH, null)
                             ?.let { java.io.File(it).nameWithoutExtension }
                             ?: mode?.label ?: "Rakhsha AI"
+                        dev.ide.ui.ai.AiChatScreen(
+                            assistant = a,
+                            backend = backend,
+                            modifier = Modifier.fillMaxSize(),
+                            initialMessages = savedMessages,
+                            modelName = currentModelName,
+                            availableModels = availableModels,
+                            onSwitchModel = { path ->
+                                scope.launch {
+                                    isLoading = true; statusMsg = "Switching model..."
+                                    uiState = AiUiState.CONNECTING
+                                    try {
+                                        val newA = dev.ide.ai.impl.LlamaCppAssistant()
+                                        withContext(Dispatchers.IO) { newA.loadModel(path) }
+                                        if (newA.isReady) {
+                                            prefs.edit().putString(AI_PREF_MODEL_PATH, path).apply()
+                                            assistant = newA; uiState = AiUiState.CHATTING
+                                        } else statusMsg = "Model failed to load."
+                                    } catch (e: Exception) { statusMsg = "Error: ${e.message}" }
+                                    isLoading = false
+                                }
+                            },
+                            onMessagesChanged = { msgs ->
+                                scope.launch(Dispatchers.IO) { saveChatMessages(context, msgs) }
+                            },
+                        )
                     }
-                    dev.ide.ui.ai.AiChatScreen(
-                        assistant = a,
-                        backend = backend,
-                        modifier = Modifier.fillMaxSize(),
-                        initialMessages = savedMessages,
-                        modelName = currentModelName,
-                        availableModels = availableModels,
-                        onSwitchModel = { path ->
-                            // User picked a different model from the dropdown — reload it
-                            scope.launch {
-                                isLoading = true
-                                statusMsg = "Switching model..."
-                                uiState = AiUiState.CONNECTING
-                                try {
-                                    val newA = dev.ide.ai.impl.LlamaCppAssistant()
-                                    withContext(Dispatchers.IO) { newA.loadModel(path) }
-                                    if (newA.isReady) {
-                                        prefs.edit().putString(AI_PREF_MODEL_PATH, path).apply()
-                                        assistant = newA
-                                        uiState = AiUiState.CHATTING
-                                    } else { statusMsg = "Model failed to load." }
-                                } catch (e: Exception) { statusMsg = "Error: ${e.message}" }
-                                isLoading = false
-                            }
-                        },
-                        onMessagesChanged = { msgs ->
-                            scope.launch(Dispatchers.IO) { saveChatMessages(context, msgs) }
-                        },
-                    )
                 }
             }
         }
