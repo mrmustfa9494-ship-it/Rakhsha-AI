@@ -371,6 +371,31 @@ private fun Splash(message: String) {
 /** Where the AI assistant's connection settings (mode, model path or provider+API key) are remembered
  *  across app restarts, so the user doesn't have to re-pick a model / re-enter an API key every time. */
 private const val AI_PREFS = "rakshaai_ai_prefs"
+
+/**
+ * Loads a llama.cpp model on a genuine background [Thread] (not a coroutine dispatcher).
+ * llama.cpp's JNI call is a long-running native operation that can block the thread pool
+ * used by [kotlinx.coroutines.Dispatchers.IO], which starves Compose's recomposition loop
+ * and makes the UI appear frozen even though the coroutine is technically off the main thread.
+ * Using a raw Thread sidesteps that: the UI remains responsive and Cancel/Back/Close work.
+ */
+private suspend fun loadModelAsync(
+    assistant: dev.ide.ai.impl.LlamaCppAssistant,
+    modelPath: String,
+): Boolean = kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+    val thread = Thread {
+        try {
+            kotlinx.coroutines.runBlocking { assistant.loadModel(modelPath) }
+            if (cont.isActive) cont.resume(assistant.isReady) {}
+        } catch (e: Exception) {
+            if (cont.isActive) cont.resume(false) {}
+        }
+    }
+    thread.name = "rakshaai-model-loader"
+    thread.isDaemon = true
+    thread.start()
+    cont.invokeOnCancellation { thread.interrupt() }
+}
 private const val AI_PREF_MODE = "mode"
 private const val AI_PREF_MODEL_PATH = "model_path"
 private const val AI_PREF_PROVIDER = "provider"
@@ -471,7 +496,7 @@ private fun RakshaAiAssistantOverlay(backend: IdeBackend, onClose: () -> Unit) {
             statusMsg = "Loading model (10-30s)..."
             try {
                 val a = dev.ide.ai.impl.LlamaCppAssistant()
-                withContext(Dispatchers.IO) { a.loadModel(localFile.absolutePath) }
+                loadModelAsync(a, localFile.absolutePath)
                 if (a.isReady) {
                     prefs.edit().putString(AI_PREF_MODE, AiMode.OFFLINE.name)
                         .putString(AI_PREF_MODEL_PATH, localFile.absolutePath).apply()
@@ -571,7 +596,7 @@ private fun RakshaAiAssistantOverlay(backend: IdeBackend, onClose: () -> Unit) {
                                         isLoading = true; statusMsg = "Loading model..."
                                         try {
                                             val a = dev.ide.ai.impl.LlamaCppAssistant()
-                                            withContext(Dispatchers.IO) { a.loadModel(savedPath) }
+                                            loadModelAsync(a, savedPath)
                                             if (a.isReady) { assistant = a; uiState = AiUiState.CHATTING }
                                             else statusMsg = "Model failed to load."
                                         } catch (e: Exception) { statusMsg = "Error: ${e.message}" }
@@ -590,7 +615,7 @@ private fun RakshaAiAssistantOverlay(backend: IdeBackend, onClose: () -> Unit) {
                                         isLoading = true; statusMsg = "Loading model..."
                                         try {
                                             val a = dev.ide.ai.impl.LlamaCppAssistant()
-                                            withContext(Dispatchers.IO) { a.loadModel(file.absolutePath) }
+                                            loadModelAsync(a, file.absolutePath)
                                             if (a.isReady) { assistant = a; uiState = AiUiState.CHATTING }
                                             else statusMsg = "Model failed to load."
                                         } catch (e: Exception) { statusMsg = "Error: ${e.message}" }
@@ -660,8 +685,8 @@ private fun RakshaAiAssistantOverlay(backend: IdeBackend, onClose: () -> Unit) {
                                     uiState = AiUiState.CONNECTING
                                     try {
                                         val newA = dev.ide.ai.impl.LlamaCppAssistant()
-                                        withContext(Dispatchers.IO) { newA.loadModel(path) }
-                                        if (newA.isReady) {
+                                        val ok = loadModelAsync(newA, path)
+                                        if (ok) {
                                             prefs.edit().putString(AI_PREF_MODEL_PATH, path).apply()
                                             assistant = newA; uiState = AiUiState.CHATTING
                                         } else statusMsg = "Model failed to load."
