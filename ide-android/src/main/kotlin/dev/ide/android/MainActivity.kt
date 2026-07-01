@@ -13,18 +13,23 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -186,16 +191,39 @@ class MainActivity : ComponentActivity() {
                         },
                     )
 
-                    // Entry point: launch standalone AiChatActivity (separate window/thread)
-                    // so llama.cpp model loading never freezes the IDE UI.
-                    FloatingActionButton(
-                        onClick = { startActivity(android.content.Intent(this@MainActivity, AiChatActivity::class.java)) },
-                        modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
-                        containerColor = MaterialTheme.colorScheme.primary,
-                    ) {
-                        Text("AI", style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onPrimary,
-                            fontWeight = FontWeight.Bold)
+                    var showAi by remember { mutableStateOf(false) }
+                    var fabOffsetX by remember { mutableFloatStateOf(0f) }
+                    var fabOffsetY by remember { mutableFloatStateOf(0f) }
+
+                    if (showAi) {
+                        androidx.compose.material3.Surface(modifier = Modifier.fillMaxSize()) {
+                            RakshaAiOverlay(backend = b, onClose = { showAi = false })
+                        }
+                    }
+
+                    // Draggable "AI" button — user can move it anywhere on screen
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        FloatingActionButton(
+                            onClick = { showAi = true },
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(16.dp)
+                                .offset(
+                                    x = androidx.compose.ui.unit.Dp(fabOffsetX),
+                                    y = androidx.compose.ui.unit.Dp(fabOffsetY),
+                                )
+                                .pointerInput(Unit) {
+                                    androidx.compose.foundation.gestures.detectDragGestures { _, dragAmount ->
+                                        fabOffsetX += dragAmount.x / density
+                                        fabOffsetY += dragAmount.y / density
+                                    }
+                                },
+                            containerColor = MaterialTheme.colorScheme.primary,
+                        ) {
+                            Text("AI", style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
 
@@ -355,3 +383,279 @@ private fun Splash(message: String) {
 
 /** Where the AI assistant's connection settings (mode, model path or provider+API key) are remembered
  *  across app restarts, so the user doesn't have to re-pick a model / re-enter an API key every time. */
+
+private suspend fun loadModelOnThread(path: String): dev.ide.ai.impl.LlamaCppAssistant? =
+    kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+        val a = dev.ide.ai.impl.LlamaCppAssistant()
+        val t = Thread {
+            try {
+                kotlinx.coroutines.runBlocking { a.loadModel(path) }
+                if (cont.isActive) cont.resume(if (a.isReady) a else null) {}
+            } catch (e: Exception) {
+                if (cont.isActive) cont.resume(null) {}
+            }
+        }
+        t.name = "rakshaai-model-loader"
+        t.isDaemon = true
+        t.start()
+        cont.invokeOnCancellation { /* model load can't be interrupted cleanly but UI stays alive */ }
+    }
+
+private const val AI_PREFS = "rakshaai_ai_prefs"
+private const val AI_PREF_MODE = "mode"
+private const val AI_PREF_MODEL_PATH = "model_path"
+private const val AI_PREF_PROVIDER = "provider"
+private const val AI_PREF_API_KEY = "api_key"
+
+private fun loadSavedMessages(ctx: android.content.Context): List<dev.ide.ai.ChatMessage> {
+    val f = java.io.File(ctx.filesDir, "ai_chat_history.json")
+    if (!f.exists()) return emptyList()
+    return try {
+        val arr = org.json.JSONArray(f.readText())
+        (0 until arr.length()).map { i ->
+            val o = arr.getJSONObject(i)
+            dev.ide.ai.ChatMessage(dev.ide.ai.ChatMessage.Role.valueOf(o.getString("role")), o.getString("content"))
+        }
+    } catch (e: Exception) { emptyList() }
+}
+
+private fun saveMessages(ctx: android.content.Context, msgs: List<dev.ide.ai.ChatMessage>) {
+    try {
+        val arr = org.json.JSONArray()
+        msgs.forEach { m -> arr.put(org.json.JSONObject().put("role", m.role.name).put("content", m.content)) }
+        java.io.File(ctx.filesDir, "ai_chat_history.json").writeText(arr.toString())
+    } catch (_: Exception) {}
+}
+
+private enum class AiMode(val label: String) {
+    OFFLINE("Offline (on-device model)"),
+    GEMINI("Online -- Google Gemini"),
+    OPENAI("Online -- OpenAI"),
+    CLAUDE("Online -- Anthropic Claude"),
+}
+
+@Composable
+private fun RakshaAiOverlay(backend: dev.ide.ui.backend.IdeBackend, onClose: () -> Unit) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val prefs = remember { ctx.getSharedPreferences(AI_PREFS, android.content.Context.MODE_PRIVATE) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+
+    var showScreen by remember { mutableStateOf<String>("MODE_SELECT") } // MODE_SELECT | CONNECTING | CHAT
+    var selectedMode by remember { mutableStateOf<AiMode?>(null) }
+    var statusMsg by remember { mutableStateOf("") }
+    var isLoading by remember { mutableStateOf(false) }
+    var apiKeyInput by remember { mutableStateOf("") }
+    var assistant by remember { mutableStateOf<dev.ide.ai.AiAssistant?>(null) }
+    var savedMsgs by remember { mutableStateOf<List<dev.ide.ai.ChatMessage>>(emptyList()) }
+
+    // Restore on open
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        savedMsgs = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { loadSavedMessages(ctx) }
+        val m = prefs.getString(AI_PREF_MODE, null)?.let { runCatching { AiMode.valueOf(it) }.getOrNull() }
+        if (m != null) {
+            selectedMode = m
+            when (m) {
+                AiMode.OFFLINE -> statusMsg = "Tap 'Load' to reload your model."
+                else -> prefs.getString(AI_PREF_API_KEY, null)?.let { if (it.isNotBlank()) apiKeyInput = it }
+            }
+            showScreen = "CONNECTING"
+        }
+    }
+
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose { assistant?.let { a -> if (a.isReady) kotlinx.coroutines.runBlocking { a.unloadModel() } } }
+    }
+
+    val pickFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: android.net.Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            isLoading = true; statusMsg = "Copying model..."
+            val name = ctx.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+                ?.use { c -> if (c.moveToFirst()) c.getString(c.getColumnIndexOrThrow(OpenableColumns.DISPLAY_NAME)) else null } ?: "model.gguf"
+            val outFile = java.io.File(ctx.filesDir, "models").apply { mkdirs() }.resolve(name)
+            try {
+                ctx.contentResolver.openInputStream(uri)?.use { inp ->
+                    java.io.FileOutputStream(outFile).use { out -> inp.copyTo(out) }
+                }
+            } catch (e: Exception) { statusMsg = "Failed to copy: ${e.message}"; isLoading = false; return@launch }
+            statusMsg = "Loading model (30-60s)..."
+            val a = loadModelOnThread(outFile.absolutePath)
+            if (a != null) {
+                prefs.edit().putString(AI_PREF_MODE, AiMode.OFFLINE.name).putString(AI_PREF_MODEL_PATH, outFile.absolutePath).apply()
+                assistant = a; showScreen = "CHAT"
+            } else statusMsg = "Model failed to load."
+            isLoading = false
+        }
+    }
+
+    androidx.compose.material3.Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background,
+    ) {
+        Column(modifier = Modifier.fillMaxSize().safeDrawingPadding()) {
+            // Top bar — always responsive
+            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically) {
+                if (showScreen != "MODE_SELECT") {
+                    androidx.compose.material3.TextButton(onClick = {
+                        if (showScreen == "CHAT") showScreen = "CONNECTING"
+                        else { selectedMode = null; statusMsg = ""; showScreen = "MODE_SELECT" }
+                    }) { Text("← Back") }
+                } else Text("  ")
+                Text("Rakhsha AI", style = MaterialTheme.typography.titleLarge)
+                androidx.compose.material3.TextButton(onClick = onClose) { Text("Close") }
+            }
+            androidx.compose.material3.HorizontalDivider()
+
+            when (showScreen) {
+                "MODE_SELECT" -> Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+                    Text("Choose AI mode", style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(bottom = 16.dp))
+                    AiMode.values().forEach { m ->
+                        androidx.compose.material3.Surface(
+                            onClick = { selectedMode = m; statusMsg = ""; showScreen = "CONNECTING" },
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                        ) {
+                            Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(m.label, style = MaterialTheme.typography.bodyLarge)
+                                    Text(if (m == AiMode.OFFLINE) "No internet, needs .gguf file" else "Needs API key",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
+                                }
+                                Text(">", color = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+                    }
+                }
+
+                "CONNECTING" -> Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+                    Text(selectedMode?.label ?: "", style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(bottom = 12.dp))
+
+                    if (isLoading) {
+                        // Loading — UI stays alive, Back/Close above still work
+                        Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                            CircularProgressIndicator(modifier = Modifier.padding(8.dp))
+                            Text(statusMsg, modifier = Modifier.padding(top = 8.dp))
+                            Text("This may take 30-60 seconds...", style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+                        }
+                    } else {
+                        if (statusMsg.isNotBlank()) {
+                            androidx.compose.material3.Surface(
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
+                                Text(statusMsg, modifier = Modifier.padding(12.dp))
+                            }
+                        }
+
+                        when (selectedMode) {
+                            AiMode.OFFLINE -> {
+                                val savedPath = prefs.getString(AI_PREF_MODEL_PATH, null)
+                                if (savedPath != null && java.io.File(savedPath).exists()) {
+                                    androidx.compose.material3.Button(
+                                        onClick = {
+                                            scope.launch {
+                                                isLoading = true; statusMsg = "Loading model..."
+                                                val a = loadModelOnThread(savedPath)
+                                                if (a != null) { assistant = a; showScreen = "CHAT" }
+                                                else statusMsg = "Failed. Try re-downloading."
+                                                isLoading = false
+                                            }
+                                        },
+                                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                                    ) { Text("Load: ${java.io.File(savedPath).name}") }
+                                }
+                                dev.ide.android.ai.ModelDownloadScreen(
+                                    context = ctx,
+                                    onModelReady = { file ->
+                                        prefs.edit().putString(AI_PREF_MODE, AiMode.OFFLINE.name)
+                                            .putString(AI_PREF_MODEL_PATH, file.absolutePath).apply()
+                                        scope.launch {
+                                            isLoading = true; statusMsg = "Loading model..."
+                                            val a = loadModelOnThread(file.absolutePath)
+                                            if (a != null) { assistant = a; showScreen = "CHAT" }
+                                            else statusMsg = "Failed to load."
+                                            isLoading = false
+                                        }
+                                    },
+                                    onPickFromFiles = { pickFile.launch(arrayOf("application/octet-stream", "*/*")) },
+                                )
+                            }
+                            AiMode.GEMINI, AiMode.OPENAI, AiMode.CLAUDE -> Column {
+                                androidx.compose.material3.OutlinedTextField(
+                                    value = apiKeyInput, onValueChange = { apiKeyInput = it },
+                                    label = { Text("${selectedMode?.label?.substringAfter("-- ") ?: ""} API key") },
+                                    modifier = Modifier.fillMaxWidth(), singleLine = true)
+                                androidx.compose.material3.Button(
+                                    enabled = apiKeyInput.isNotBlank(),
+                                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                                    onClick = {
+                                        scope.launch {
+                                            isLoading = true; statusMsg = "Connecting..."
+                                            try {
+                                                val provider = when (selectedMode) {
+                                                    AiMode.GEMINI -> dev.ide.ai.online.OnlineProvider.GEMINI
+                                                    AiMode.OPENAI -> dev.ide.ai.online.OnlineProvider.OPENAI
+                                                    else -> dev.ide.ai.online.OnlineProvider.CLAUDE
+                                                }
+                                                val a = dev.ide.ai.online.OnlineAssistant(provider)
+                                                a.loadModel(apiKeyInput)
+                                                if (a.isReady) {
+                                                    prefs.edit().putString(AI_PREF_MODE, selectedMode!!.name)
+                                                        .putString(AI_PREF_PROVIDER, provider.name)
+                                                        .putString(AI_PREF_API_KEY, apiKeyInput).apply()
+                                                    assistant = a; showScreen = "CHAT"
+                                                } else statusMsg = "Failed to connect."
+                                            } catch (e: Exception) { statusMsg = "Error: ${e.message}" }
+                                            isLoading = false
+                                        }
+                                    }) { Text("Connect") }
+                            }
+                            null -> {}
+                        }
+                    }
+                }
+
+                "CHAT" -> {
+                    val a = assistant
+                    if (a != null) {
+                        val modelsDir = dev.ide.android.ai.modelsDir(ctx)
+                        val allModels = remember(modelsDir) {
+                            modelsDir.listFiles()?.filter { it.extension == "gguf" }
+                                ?.map { it.absolutePath to it.nameWithoutExtension } ?: emptyList()
+                        }
+                        val modelName = prefs.getString(AI_PREF_MODEL_PATH, null)
+                            ?.let { java.io.File(it).nameWithoutExtension } ?: selectedMode?.label ?: "Rakhsha AI"
+                        dev.ide.ui.ai.AiChatScreen(
+                            assistant = a, backend = backend,
+                            modifier = Modifier.fillMaxSize(),
+                            initialMessages = savedMsgs,
+                            modelName = modelName,
+                            availableModels = allModels,
+                            onSwitchModel = { path ->
+                                scope.launch {
+                                    showScreen = "CONNECTING"; isLoading = true; statusMsg = "Switching model..."
+                                    val newA = loadModelOnThread(path)
+                                    if (newA != null) {
+                                        prefs.edit().putString(AI_PREF_MODEL_PATH, path).apply()
+                                        assistant = newA; showScreen = "CHAT"
+                                    } else { statusMsg = "Model failed to load."; isLoading = false }
+                                    isLoading = false
+                                }
+                            },
+                            onMessagesChanged = { msgs ->
+                                scope.launch(kotlinx.coroutines.Dispatchers.IO) { saveMessages(ctx, msgs) }
+                            },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
