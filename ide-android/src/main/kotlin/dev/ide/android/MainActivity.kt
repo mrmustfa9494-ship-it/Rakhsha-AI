@@ -19,19 +19,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.IntOffset
-import kotlin.math.roundToInt
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -194,8 +189,6 @@ class MainActivity : ComponentActivity() {
                     )
 
                     var showAi by remember { mutableStateOf(false) }
-                    var fabOffsetX by remember { mutableFloatStateOf(0f) }
-                    var fabOffsetY by remember { mutableFloatStateOf(0f) }
 
                     if (showAi) {
                         androidx.compose.material3.Surface(modifier = Modifier.fillMaxSize()) {
@@ -205,16 +198,7 @@ class MainActivity : ComponentActivity() {
 
                     FloatingActionButton(
                         onClick = { showAi = true },
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(16.dp)
-                            .offset { IntOffset(fabOffsetX.roundToInt(), fabOffsetY.roundToInt()) }
-                            .pointerInput(Unit) {
-                                androidx.compose.foundation.gestures.detectDragGestures { _, drag ->
-                                    fabOffsetX += drag.x
-                                    fabOffsetY += drag.y
-                                }
-                            },
+                        modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
                         containerColor = MaterialTheme.colorScheme.primary,
                     ) {
                         Text("AI", style = MaterialTheme.typography.labelLarge,
