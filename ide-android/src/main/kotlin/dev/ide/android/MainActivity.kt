@@ -13,14 +13,12 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.CircularProgressIndicator
@@ -28,7 +26,6 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -192,8 +189,6 @@ class MainActivity : ComponentActivity() {
                     )
 
                     var showAi by remember { mutableStateOf(false) }
-                    var fabOffsetX by remember { mutableFloatStateOf(0f) }
-                    var fabOffsetY by remember { mutableFloatStateOf(0f) }
 
                     if (showAi) {
                         androidx.compose.material3.Surface(modifier = Modifier.fillMaxSize()) {
@@ -201,29 +196,14 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
-                    // Draggable "AI" button — user can move it anywhere on screen
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        FloatingActionButton(
-                            onClick = { showAi = true },
-                            modifier = Modifier
-                                .align(Alignment.BottomEnd)
-                                .padding(16.dp)
-                                .offset(
-                                    x = androidx.compose.ui.unit.Dp(fabOffsetX),
-                                    y = androidx.compose.ui.unit.Dp(fabOffsetY),
-                                )
-                                .pointerInput(Unit) {
-                                    androidx.compose.foundation.gestures.detectDragGestures { _, dragAmount ->
-                                        fabOffsetX += dragAmount.x / density
-                                        fabOffsetY += dragAmount.y / density
-                                    }
-                                },
-                            containerColor = MaterialTheme.colorScheme.primary,
-                        ) {
-                            Text("AI", style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.onPrimary,
-                                fontWeight = FontWeight.Bold)
-                        }
+                    FloatingActionButton(
+                        onClick = { showAi = true },
+                        modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
+                        containerColor = MaterialTheme.colorScheme.primary,
+                    ) {
+                        Text("AI", style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            fontWeight = FontWeight.Bold)
                     }
                 }
 
