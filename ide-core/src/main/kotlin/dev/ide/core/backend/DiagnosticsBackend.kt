@@ -43,7 +43,7 @@ internal class DiagnosticsBackend(private val ctx: BackendContext) : Diagnostics
         runCatching {
             val dir = ctx.manager?.storageRoot ?: ctx.servicesOrNull?.workspaceRoot ?: return@runCatching null
             Files.createDirectories(dir)
-            val file = dir.resolve("codeassist-log-${System.currentTimeMillis()}.txt")
+            val file = dir.resolve("rakshaai-log-${System.currentTimeMillis()}.txt")
             file.toFile().writeText(renderLogs(Log.recent()))
             file.toString()
         }.getOrNull()

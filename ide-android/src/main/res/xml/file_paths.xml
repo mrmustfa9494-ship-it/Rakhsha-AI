@@ -1,8 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Paths the FileProvider may expose as content:// URIs. Projects now live under the app's external
-     files dir (Android/data/<pkg>/files/codeassist); `external-files-path` maps getExternalFilesDir(null).
-     The internal `files-path` is kept so a backup zip written before the storage move can still be shared. -->
+<!-- Paths the FileProvider may expose as content:// URIs. Projects live under the app's external
+     files dir (Android/data/<pkg>/files/RakshaAI); `external-files-path` maps getExternalFilesDir(null).
+     The internal `files-path` is kept so a backup zip written before the storage move can still be shared.
+     Legacy codeassist paths are also kept so old project data can still be read/shared. -->
 <paths>
+    <external-files-path name="rakshaai-ext" path="RakshaAI/" />
+    <files-path name="rakshaai" path="rakshaai/" />
+    <!-- Legacy paths for backwards compatibility with existing project data -->
     <external-files-path name="codeassist-ext" path="codeassist/" />
     <files-path name="codeassist" path="codeassist/" />
 </paths>

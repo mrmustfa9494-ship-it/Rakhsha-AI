@@ -401,222 +401,275 @@ private fun saveChatMessages(context: android.content.Context, messages: List<de
     }
 }
 
-/**
- * The Rakhsha AI assistant, embedded in [MainActivity]'s own window so it can act on the real,
- * already-open project via [backend] (insert AI-written code into a file, read live build errors —
- * see [dev.ide.ui.ai.AiChatScreen]). Three steps: pick a mode (offline on-device vs an online cloud
- * provider), connect (model file / API key), then chat.
- *
- * Connection settings and the chat transcript persist across app restarts (see [AI_PREFS] /
- * [AI_CHAT_HISTORY_FILE]): reopening this overlay after a previous session reconnects automatically
- * instead of starting from the mode-selection screen again, and the prior conversation is still there.
- */
+
 @Composable
 private fun RakshaAiAssistantOverlay(backend: IdeBackend, onClose: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val prefs = remember { context.getSharedPreferences(AI_PREFS, android.content.Context.MODE_PRIVATE) }
 
+    var uiState by remember { mutableStateOf(AiUiState.SELECTING) }
     var mode by remember { mutableStateOf<AiMode?>(null) }
-    var status by remember { mutableStateOf("") }
+    var statusMsg by remember { mutableStateOf("") }
+    var isLoading by remember { mutableStateOf(false) }
     var apiKeyInput by remember { mutableStateOf("") }
     var assistant by remember { mutableStateOf<dev.ide.ai.AiAssistant?>(null) }
-    var isReady by remember { mutableStateOf(false) }
     var savedMessages by remember { mutableStateOf<List<dev.ide.ai.ChatMessage>>(emptyList()) }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
 
-    // On first open, restore the saved chat transcript and — if a model/API key was connected before —
-    // reconnect automatically instead of showing the mode-selection screen again.
     androidx.compose.runtime.LaunchedEffect(Unit) {
         savedMessages = withContext(Dispatchers.IO) { loadSavedChatMessages(context) }
-
-        val savedMode = prefs.getString(AI_PREF_MODE, null)?.let { runCatching { AiMode.valueOf(it) }.getOrNull() }
-        if (savedMode == null) return@LaunchedEffect
-        mode = savedMode
-        status = "Reconnecting…"
-        try {
+        val savedMode = prefs.getString(AI_PREF_MODE, null)
+            ?.let { runCatching { AiMode.valueOf(it) }.getOrNull() }
+        if (savedMode != null) {
+            mode = savedMode
             when (savedMode) {
-                AiMode.OFFLINE -> {
-                    val path = prefs.getString(AI_PREF_MODEL_PATH, null)
-                    if (path != null && File(path).exists()) {
-                        val a = dev.ide.ai.impl.LlamaCppAssistant()
-                        withContext(Dispatchers.IO) { a.loadModel(path) }
-                        assistant = a
-                        isReady = a.isReady
-                        status = if (isReady) "Model loaded — ready to chat." else "Saved model failed to reload."
-                    } else {
-                        status = "" // saved model file is gone — fall back to manual pick
-                    }
-                }
+                AiMode.OFFLINE -> statusMsg = "Tap 'Load model' to reload your previous model."
                 else -> {
-                    val savedProvider = prefs.getString(AI_PREF_PROVIDER, null)
-                        ?.let { runCatching { dev.ide.ai.online.OnlineProvider.valueOf(it) }.getOrNull() }
-                    val savedKey = prefs.getString(AI_PREF_API_KEY, null)
-                    if (savedProvider != null && !savedKey.isNullOrBlank()) {
-                        val a = dev.ide.ai.online.OnlineAssistant(savedProvider)
-                        a.loadModel(savedKey)
-                        assistant = a
-                        isReady = a.isReady
-                        status = if (isReady) "Connected — ready to chat." else "Saved connection failed."
-                    } else {
-                        status = ""
-                    }
+                    val key = prefs.getString(AI_PREF_API_KEY, null)
+                    if (!key.isNullOrBlank()) apiKeyInput = key
+                    statusMsg = "Tap 'Connect' to reconnect."
                 }
             }
-        } catch (e: Exception) {
-            status = "" // reconnect failed silently — user can just reconnect manually below
+            uiState = AiUiState.CONNECTING
         }
     }
 
-    // Free native memory / drop the connection when the overlay is closed or the Activity is destroyed.
     androidx.compose.runtime.DisposableEffect(Unit) {
         onDispose {
             val a = assistant
-            if (a != null && a.isReady) {
-                kotlinx.coroutines.runBlocking { a.unloadModel() }
-            }
+            if (a != null && a.isReady) kotlinx.coroutines.runBlocking { a.unloadModel() }
         }
     }
 
     val pickModel = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
-            status = "Copying model into app storage…"
+            isLoading = true; statusMsg = "Copying model…"
             val localFile = withContext(Dispatchers.IO) {
                 val name = context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
                     ?.use { c -> if (c.moveToFirst()) c.getString(c.getColumnIndexOrThrow(OpenableColumns.DISPLAY_NAME)) else null }
                     ?: "model.gguf"
                 val outFile = File(context.filesDir, "models").apply { mkdirs() }.resolve(name)
                 try {
-                    context.contentResolver.openInputStream(uri)?.use { input ->
-                        java.io.FileOutputStream(outFile).use { output -> input.copyTo(output) }
+                    context.contentResolver.openInputStream(uri)?.use { inp ->
+                        java.io.FileOutputStream(outFile).use { out -> inp.copyTo(out) }
                     }
                     outFile
-                } catch (e: Exception) {
-                    null
-                }
+                } catch (e: Exception) { null }
             }
-            if (localFile == null) {
-                status = "Failed to read the selected file."
-                return@launch
-            }
-            status = "Loading model (this can take 10-30s)…"
+            if (localFile == null) { statusMsg = "Failed to read file."; isLoading = false; return@launch }
+            statusMsg = "Loading model (10-30s)..."
             try {
                 val a = dev.ide.ai.impl.LlamaCppAssistant()
-                a.loadModel(localFile.absolutePath)
-                assistant = a
-                isReady = a.isReady
-                status = if (isReady) "Model loaded — ready to chat." else "Model failed to load."
-                if (isReady) {
-                    prefs.edit()
-                        .putString(AI_PREF_MODE, AiMode.OFFLINE.name)
-                        .putString(AI_PREF_MODEL_PATH, localFile.absolutePath)
-                        .apply()
-                }
-            } catch (e: Exception) {
-                status = "Error loading model: ${e.message}"
-            }
+                withContext(Dispatchers.IO) { a.loadModel(localFile.absolutePath) }
+                if (a.isReady) {
+                    prefs.edit().putString(AI_PREF_MODE, AiMode.OFFLINE.name)
+                        .putString(AI_PREF_MODEL_PATH, localFile.absolutePath).apply()
+                    assistant = a; uiState = AiUiState.CHATTING
+                } else { statusMsg = "Model failed to load." }
+            } catch (e: Exception) { statusMsg = "Error: ${e.message}" }
+            isLoading = false
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize().safeDrawingPadding().padding(16.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Text("AI", style = MaterialTheme.typography.headlineMedium)
-            androidx.compose.material3.TextButton(onClick = onClose) { Text("Close") }
-        }
+    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        Column(modifier = Modifier.fillMaxSize().safeDrawingPadding()) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            ) {
+                if (uiState != AiUiState.SELECTING) {
+                    TextButton(onClick = {
+                        if (uiState == AiUiState.CHATTING) uiState = AiUiState.CONNECTING
+                        else { mode = null; statusMsg = ""; apiKeyInput = ""; uiState = AiUiState.SELECTING }
+                    }) { Text("← Back") }
+                } else { Text("  ") }
+                Text("Rakhsha AI", style = MaterialTheme.typography.titleLarge)
+                TextButton(onClick = onClose) { Text("Close") }
+            }
+            androidx.compose.material3.HorizontalDivider()
 
-        when {
-            mode == null -> Column(modifier = Modifier.padding(top = 16.dp)) {
-                Text(
-                    "Offline runs entirely on this device, no internet or API key needed — but needs a downloaded .gguf model file. Online modes need your own API key and an internet connection.",
-                    modifier = Modifier.padding(bottom = 16.dp),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                AiMode.values().forEach { m ->
-                    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                        androidx.compose.material3.RadioButton(selected = false, onClick = { mode = m })
-                        Text(m.label, modifier = Modifier.padding(start = 8.dp, top = 12.dp))
+            when (uiState) {
+                AiUiState.SELECTING -> Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+                    Text("Choose AI mode", style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(bottom = 16.dp))
+                    AiMode.values().forEach { m ->
+                        Surface(
+                            onClick = { mode = m; uiState = AiUiState.CONNECTING },
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                        ) {
+                            Row(modifier = Modifier.padding(16.dp),
+                                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(m.label, style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(
+                                        if (m == AiMode.OFFLINE) "No internet needed • Needs .gguf model file"
+                                        else "Needs API key • Faster responses",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                    )
+                                }
+                                Text(">", style = MaterialTheme.typography.titleLarge,
+                                    color = MaterialTheme.colorScheme.primary)
+                            }
+                        }
                     }
                 }
-            }
 
-            !isReady -> Column(modifier = Modifier.padding(top = 16.dp)) {
-                Text(mode!!.label, style = MaterialTheme.typography.titleMedium)
-                if (status.isNotBlank()) {
-                    Surface(modifier = Modifier.padding(top = 12.dp, bottom = 12.dp)) { Text(status) }
-                }
-                when {
-                    status.startsWith("Loading") || status.startsWith("Copying") || status.startsWith("Connecting") ->
-                        CircularProgressIndicator()
-
-                    mode == AiMode.OFFLINE -> androidx.compose.material3.Button(
-                        onClick = { pickModel.launch(arrayOf("application/octet-stream", "*/*")) }
-                    ) { Text("Pick a .gguf model file") }
-
-                    else -> Column {
-                        androidx.compose.material3.OutlinedTextField(
-                            value = apiKeyInput,
-                            onValueChange = { apiKeyInput = it },
-                            label = { Text("${mode!!.label.substringAfter("— ")} API key") },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        androidx.compose.material3.Button(
-                            enabled = apiKeyInput.isNotBlank(),
-                            modifier = Modifier.padding(top = 12.dp),
-                            onClick = {
-                                scope.launch {
-                                    status = "Connecting…"
-                                    try {
-                                        val provider = when (mode) {
-                                            AiMode.GEMINI -> dev.ide.ai.online.OnlineProvider.GEMINI
-                                            AiMode.OPENAI -> dev.ide.ai.online.OnlineProvider.OPENAI
-                                            AiMode.CLAUDE -> dev.ide.ai.online.OnlineProvider.CLAUDE
-                                            else -> error("unreachable")
-                                        }
-                                        val a = dev.ide.ai.online.OnlineAssistant(provider)
-                                        a.loadModel(apiKeyInput)
-                                        assistant = a
-                                        isReady = a.isReady
-                                        status = if (isReady) "Connected — ready to chat." else "Failed to connect."
-                                        if (isReady) {
-                                            prefs.edit()
-                                                .putString(AI_PREF_MODE, mode!!.name)
-                                                .putString(AI_PREF_PROVIDER, provider.name)
-                                                .putString(AI_PREF_API_KEY, apiKeyInput)
-                                                .apply()
-                                        }
-                                    } catch (e: Exception) {
-                                        status = "Error: ${e.message}"
+                AiUiState.CONNECTING -> Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+                    Text(mode?.label ?: "", style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(bottom = 12.dp))
+                    if (statusMsg.isNotBlank()) {
+                        Surface(color = MaterialTheme.colorScheme.surfaceVariant,
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
+                            Text(statusMsg, modifier = Modifier.padding(12.dp),
+                                style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                    if (isLoading) {
+                        CircularProgressIndicator(modifier = Modifier.padding(8.dp))
+                    } else when (mode) {
+                        AiMode.OFFLINE -> {
+                            val savedPath = prefs.getString(AI_PREF_MODEL_PATH, null)
+                            if (savedPath != null && File(savedPath).exists()) {
+                                Surface(color = MaterialTheme.colorScheme.surfaceVariant,
+                                    shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+                                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                                    Column(modifier = Modifier.padding(12.dp)) {
+                                        Text("Previous model:", style = MaterialTheme.typography.labelMedium)
+                                        Text(File(savedPath).name, style = MaterialTheme.typography.bodyMedium)
                                     }
                                 }
-                            },
-                        ) { Text("Connect") }
+                                Button(
+                                    onClick = {
+                                        scope.launch {
+                                            isLoading = true; statusMsg = "Loading model (10-30s)..."
+                                            try {
+                                                val a = dev.ide.ai.impl.LlamaCppAssistant()
+                                                withContext(Dispatchers.IO) { a.loadModel(savedPath) }
+                                                if (a.isReady) { assistant = a; uiState = AiUiState.CHATTING }
+                                                else statusMsg = "Model failed to load."
+                                            } catch (e: Exception) { statusMsg = "Error: ${e.message}" }
+                                            isLoading = false
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                                ) { Text("Load model") }
+                            }
+                            // Model download screen (MNN Chat style)
+                            dev.ide.android.ai.ModelDownloadScreen(
+                                context = context,
+                                onModelReady = { file ->
+                                    prefs.edit().putString(AI_PREF_MODE, AiMode.OFFLINE.name)
+                                        .putString(AI_PREF_MODEL_PATH, file.absolutePath).apply()
+                                    scope.launch {
+                                        isLoading = true; statusMsg = "Loading model..."
+                                        try {
+                                            val a = dev.ide.ai.impl.LlamaCppAssistant()
+                                            withContext(Dispatchers.IO) { a.loadModel(file.absolutePath) }
+                                            if (a.isReady) { assistant = a; uiState = AiUiState.CHATTING }
+                                            else statusMsg = "Model failed to load."
+                                        } catch (e: Exception) { statusMsg = "Error: ${e.message}" }
+                                        isLoading = false
+                                    }
+                                },
+                                onPickFromFiles = { pickModel.launch(arrayOf("application/octet-stream", "*/*")) },
+                            )
+                        else -> Column {
+                            OutlinedTextField(value = apiKeyInput, onValueChange = { apiKeyInput = it },
+                                label = { Text("${mode?.label?.substringAfter("-- ") ?: ""} API key") },
+                                modifier = Modifier.fillMaxWidth(), singleLine = true)
+                            Button(
+                                enabled = apiKeyInput.isNotBlank(),
+                                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                                onClick = {
+                                    scope.launch {
+                                        isLoading = true; statusMsg = "Connecting..."
+                                        try {
+                                            val provider = when (mode) {
+                                                AiMode.GEMINI -> dev.ide.ai.online.OnlineProvider.GEMINI
+                                                AiMode.OPENAI -> dev.ide.ai.online.OnlineProvider.OPENAI
+                                                AiMode.CLAUDE -> dev.ide.ai.online.OnlineProvider.CLAUDE
+                                                else -> error("unreachable")
+                                            }
+                                            val a = dev.ide.ai.online.OnlineAssistant(provider)
+                                            a.loadModel(apiKeyInput)
+                                            if (a.isReady) {
+                                                prefs.edit().putString(AI_PREF_MODE, mode!!.name)
+                                                    .putString(AI_PREF_PROVIDER, provider.name)
+                                                    .putString(AI_PREF_API_KEY, apiKeyInput).apply()
+                                                assistant = a; uiState = AiUiState.CHATTING
+                                            } else statusMsg = "Failed to connect."
+                                        } catch (e: Exception) { statusMsg = "Error: ${e.message}" }
+                                        isLoading = false
+                                    }
+                                },
+                            ) { Text("Connect") }
+                        }
+                        null -> {}
                     }
                 }
-                androidx.compose.material3.Button(
-                    onClick = { mode = null; status = ""; apiKeyInput = "" },
-                    modifier = Modifier.padding(top = 24.dp),
-                ) { Text("Back") }
-            }
 
-            else -> assistant?.let { a ->
-                dev.ide.ui.ai.AiChatScreen(
-                    assistant = a,
-                    backend = backend,
-                    modifier = Modifier.fillMaxSize(),
-                    initialMessages = savedMessages,
-                    onMessagesChanged = { msgs -> scope.launch(Dispatchers.IO) { saveChatMessages(context, msgs) } },
-                )
+                AiUiState.CHATTING -> assistant?.let { a ->
+                    // Build the list of available models for the in-chat dropdown.
+                    // Includes all files in the models dir + any recommended models that are installed.
+                    val modelsDir = dev.ide.android.ai.modelsDir(context)
+                    val availableModels = remember(modelsDir) {
+                        modelsDir.listFiles()
+                            ?.filter { it.extension == "gguf" }
+                            ?.map { it.absolutePath to it.nameWithoutExtension }
+                            ?: emptyList()
+                    }
+                    val currentModelName = remember(prefs) {
+                        prefs.getString(AI_PREF_MODEL_PATH, null)
+                            ?.let { java.io.File(it).nameWithoutExtension }
+                            ?: mode?.label ?: "Rakhsha AI"
+                    }
+                    dev.ide.ui.ai.AiChatScreen(
+                        assistant = a,
+                        backend = backend,
+                        modifier = Modifier.fillMaxSize(),
+                        initialMessages = savedMessages,
+                        modelName = currentModelName,
+                        availableModels = availableModels,
+                        onSwitchModel = { path ->
+                            // User picked a different model from the dropdown — reload it
+                            scope.launch {
+                                isLoading = true
+                                statusMsg = "Switching model..."
+                                uiState = AiUiState.CONNECTING
+                                try {
+                                    val newA = dev.ide.ai.impl.LlamaCppAssistant()
+                                    withContext(Dispatchers.IO) { newA.loadModel(path) }
+                                    if (newA.isReady) {
+                                        prefs.edit().putString(AI_PREF_MODEL_PATH, path).apply()
+                                        assistant = newA
+                                        uiState = AiUiState.CHATTING
+                                    } else { statusMsg = "Model failed to load." }
+                                } catch (e: Exception) { statusMsg = "Error: ${e.message}" }
+                                isLoading = false
+                            }
+                        },
+                        onMessagesChanged = { msgs ->
+                            scope.launch(Dispatchers.IO) { saveChatMessages(context, msgs) }
+                        },
+                    )
+                }
             }
         }
     }
 }
 
+private enum class AiUiState { SELECTING, CONNECTING, CHATTING }
+
 private enum class AiMode(val label: String) {
     OFFLINE("Offline (on-device model)"),
-    GEMINI("Online — Google Gemini"),
-    OPENAI("Online — OpenAI"),
-    CLAUDE("Online — Anthropic Claude"),
+    GEMINI("Online -- Google Gemini"),
+    OPENAI("Online -- OpenAI"),
+    CLAUDE("Online -- Anthropic Claude"),
 }

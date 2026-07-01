@@ -187,7 +187,7 @@ class ProjectManager private constructor(
      */
     fun exportBackup(): Path {
         val exportsDir = homeDir.resolve("exports").also { Files.createDirectories(it) }
-        val dest = exportsDir.resolve("codeassist-backup-${System.currentTimeMillis()}.zip")
+        val dest = exportsDir.resolve("rakshaai-backup-${System.currentTimeMillis()}.zip")
         ZipOutputStream(Files.newOutputStream(dest)).use { zip ->
             for (root in backupRoots) {
                 if (!Files.exists(root)) continue

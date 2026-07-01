@@ -149,7 +149,7 @@ object AndroidIde {
         // The v0.2.9 projects aren't openable here (no Gradle sync yet) but their sources are recoverable via
         // the backup and the file manager (this dir is a sibling of our home, both under [externalHome]).
         val legacyProjectsDir = File(externalHome(context), "Projects").toPath()
-        val legacyInternalHome = File(context.filesDir, "codeassist").toPath()
+        val legacyInternalHome = File(context.filesDir, "rakshaai").toPath()
         val legacyDataDirs = listOf(legacyProjectsDir, legacyInternalHome)
             .filter { java.nio.file.Files.exists(it) }
         return ProjectManager.onDevice(
@@ -209,7 +209,7 @@ object AndroidIde {
 
     /** The whole CodeAssist app directory (`<external-files>/codeassist`): projects, the SDK `android.jar`,
      *  the debug keystore, the kotlinc home, shared caches. This is the root surfaced to file managers. */
-    fun appHomeDir(context: Context): File = File(externalHome(context), "codeassist")
+    fun appHomeDir(context: Context): File = File(externalHome(context), "RakshaAI")
 
     /** The on-disk projects directory (`<external-files>/codeassist/projects`). */
     fun projectsDir(context: Context): File = File(appHomeDir(context), "projects")
