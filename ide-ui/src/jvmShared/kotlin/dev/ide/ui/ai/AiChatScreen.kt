@@ -222,7 +222,20 @@ fun AiChatScreen(
                     tm = tm,
                     onInsert = { code ->
                         scope.launch {
-                            backend.editor.saveFile(targetFilePath, code)
+                            // saveFile needs a FILE path; if the target is blank or a directory,
+                            // write to a default file so Insert never silently no-ops.
+                            val target = targetFilePath.let {
+                                if (it.isBlank() || it.endsWith("/")) it.trimEnd('/') + "/AiGenerated.kt" else it
+                            }
+                            val ok = runCatching {
+                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                    backend.editor.saveFile(target, code)
+                                }
+                            }.isSuccess
+                            messages.add(TimestampedMessage(ChatMessage(ChatMessage.Role.ASSISTANT,
+                                if (ok) "✓ Inserted code into: $target"
+                                else "✗ Couldn't insert. Type a valid file path in 'Insert target file' above.")))
+                            onMessagesChanged(messages.map { it.msg })
                         }
                     }
                 )
@@ -284,6 +297,7 @@ fun AiChatScreen(
 @Composable
 private fun MessageBubble(tm: TimestampedMessage, onInsert: (String) -> Unit) {
     val msg = tm.msg
+    @Suppress("DEPRECATION") val clip = androidx.compose.ui.platform.LocalClipboardManager.current
     val isUser = msg.role == ChatMessage.Role.USER
     val timeStr = remember(tm.timeMs) {
         SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(tm.timeMs))
@@ -330,8 +344,13 @@ private fun MessageBubble(tm: TimestampedMessage, onInsert: (String) -> Unit) {
                         ) {
                             Text("Code", style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.primary)
-                            TextButton(onClick = { onInsert(codeBlock) }) {
-                                Text("Insert into project", style = MaterialTheme.typography.labelSmall)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                TextButton(onClick = { clip.setText(androidx.compose.ui.text.AnnotatedString(codeBlock)) }) {
+                                    Text("Copy", style = MaterialTheme.typography.labelSmall)
+                                }
+                                TextButton(onClick = { onInsert(codeBlock) }) {
+                                    Text("Insert", style = MaterialTheme.typography.labelSmall)
+                                }
                             }
                         }
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -355,13 +374,24 @@ private fun MessageBubble(tm: TimestampedMessage, onInsert: (String) -> Unit) {
                     )
                 }
             }
-            // Timestamp
-            Text(
-                timeStr,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
-            )
+            // Timestamp + copy-whole-message (works even when the model didn't fence the code)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    timeStr,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                )
+                if (!isUser) {
+                    TextButton(
+                        onClick = { clip.setText(androidx.compose.ui.text.AnnotatedString(msg.content)) },
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                    ) {
+                        Text("Copy", style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+            }
         }
 
         if (isUser) {
