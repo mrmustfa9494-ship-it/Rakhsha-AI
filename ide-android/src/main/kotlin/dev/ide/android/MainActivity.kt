@@ -8,7 +8,6 @@ import android.provider.OpenableColumns
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -197,9 +196,15 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
+                    // AI entry point pinned to the TOP-right (toolbar area) instead of the bottom,
+                    // where it was overlapping the system nav bar / content ("neeche dab raha tha").
+                    // Uses statusBarsPadding so it sits just under the status bar, not behind it.
                     FloatingActionButton(
                         onClick = { showAi = true },
-                        modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .safeDrawingPadding()
+                            .padding(12.dp),
                         containerColor = MaterialTheme.colorScheme.primary,
                     ) {
                         Text("AI", style = MaterialTheme.typography.labelLarge,
@@ -365,15 +370,35 @@ private fun Splash(message: String) {
 /** Where the AI assistant's connection settings (mode, model path or provider+API key) are remembered
  *  across app restarts, so the user doesn't have to re-pick a model / re-enter an API key every time. */
 
+// --- TEMP DIAGNOSTIC: writes model-load progress to a file the user can open in their file manager
+// at Android/data/com.rakshaai.ide/files/rakshaai_ai_log.txt. Lets us see EXACTLY where the load
+// stalls (native load vs context creation vs an exception) instead of guessing. Remove once fixed.
+private var aiDbgCtx: android.content.Context? = null
+private fun aiDbg(msg: String) {
+    val c = aiDbgCtx ?: return
+    runCatching {
+        val f = java.io.File(c.getExternalFilesDir(null), "rakshaai_ai_log.txt")
+        f.appendText("${System.currentTimeMillis()}  $msg\n")
+    }
+}
+
 private suspend fun loadModelOnThread(path: String): dev.ide.ai.impl.LlamaCppAssistant? {
+    // Structured concurrency instead of a raw Thread + runBlocking + manual cont.resume.
+    // LlamaCppAssistant.loadModel already switches to Dispatchers.IO internally; wrapping here too
+    // is harmless and keeps the native call off the main thread. When it returns, the calling
+    // coroutine resumes naturally on its original dispatcher (Main) — no manual continuation to
+    // get stuck, which is what was freezing the UI after a successful load.
     val a = dev.ide.ai.impl.LlamaCppAssistant()
     return try {
-        // loadModel() already dispatches to Dispatchers.IO internally, so calling it directly from
-        // a coroutine on the Main dispatcher suspends cleanly and resumes back on Main when done —
-        // no need for a second, manually-managed background Thread + nested runBlocking.
-        a.loadModel(path)
+        val f = java.io.File(path)
+        aiDbg("loadModelOnThread START path=$path exists=${f.exists()} sizeBytes=${if (f.exists()) f.length() else -1}")
+        val t0 = System.currentTimeMillis()
+        aiDbg("calling a.loadModel ...")
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { a.loadModel(path) }
+        aiDbg("a.loadModel RETURNED isReady=${a.isReady} took_ms=${System.currentTimeMillis() - t0}")
         if (a.isReady) a else null
-    } catch (e: Exception) {
+    } catch (e: Throwable) {
+        aiDbg("a.loadModel THREW ${e::class.java.simpleName}: ${e.message}")
         null
     }
 }
@@ -414,6 +439,7 @@ private enum class AiMode(val label: String) {
 @Composable
 private fun RakshaAiOverlay(backend: dev.ide.ui.backend.IdeBackend, onClose: () -> Unit) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
+    androidx.compose.runtime.LaunchedEffect(Unit) { aiDbgCtx = ctx.applicationContext }
     val prefs = remember { ctx.getSharedPreferences(AI_PREFS, android.content.Context.MODE_PRIVATE) }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
 
@@ -424,6 +450,17 @@ private fun RakshaAiOverlay(backend: dev.ide.ui.backend.IdeBackend, onClose: () 
     var apiKeyInput by remember { mutableStateOf("") }
     var assistant by remember { mutableStateOf<dev.ide.ai.AiAssistant?>(null) }
     var savedMsgs by remember { mutableStateOf<List<dev.ide.ai.ChatMessage>>(emptyList()) }
+
+    // Intercept the system Back button so it navigates *within* the AI overlay instead of
+    // finishing the whole Activity (which was closing the app). At the top level (MODE_SELECT)
+    // Back closes just the overlay via onClose().
+    androidx.activity.compose.BackHandler {
+        when (showScreen) {
+            "CHAT" -> showScreen = "CONNECTING"
+            "CONNECTING" -> { selectedMode = null; statusMsg = ""; showScreen = "MODE_SELECT" }
+            else -> onClose()
+        }
+    }
 
     // Restore on open
     androidx.compose.runtime.LaunchedEffect(Unit) {
@@ -443,20 +480,9 @@ private fun RakshaAiOverlay(backend: dev.ide.ui.backend.IdeBackend, onClose: () 
         onDispose {
             val a = assistant
             if (a != null && a.isReady) {
-                // Fire-and-forget on IO: this composable's own scope is being torn down right now,
-                // and blocking the main thread here (the old runBlocking) froze the UI for however
-                // long native cleanup of a multi-GB model takes.
-                @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
-                kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) { a.unloadModel() }
+                // Unload off the main thread; blocking here (runBlocking) froze the UI on close/back.
+                kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch { runCatching { a.unloadModel() } }
             }
-        }
-    }
-
-    BackHandler(enabled = true) {
-        when (showScreen) {
-            "CHAT" -> showScreen = "CONNECTING"
-            "CONNECTING" -> { selectedMode = null; statusMsg = ""; showScreen = "MODE_SELECT" }
-            else -> onClose()
         }
     }
 
@@ -638,17 +664,13 @@ private fun RakshaAiOverlay(backend: dev.ide.ui.backend.IdeBackend, onClose: () 
                 }
 
                 "CHAT" -> {
+                    aiDbg("CHAT branch composing (assistant != null = ${assistant != null})")
                     val a = assistant
                     if (a != null) {
-                        // mkdirs()+listFiles() are synchronous disk I/O; they used to run directly in the
-                        // composable body on Main every time this branch composed. Moved to IO.
-                        var allModels by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
-                        androidx.compose.runtime.LaunchedEffect(Unit) {
-                            allModels = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                val modelsDir = dev.ide.android.ai.modelsDir(ctx)
-                                modelsDir.listFiles()?.filter { it.extension == "gguf" }
-                                    ?.map { it.absolutePath to it.nameWithoutExtension } ?: emptyList()
-                            }
+                        val modelsDir = dev.ide.android.ai.modelsDir(ctx)
+                        val allModels = remember(modelsDir) {
+                            modelsDir.listFiles()?.filter { it.extension == "gguf" }
+                                ?.map { it.absolutePath to it.nameWithoutExtension } ?: emptyList()
                         }
                         val modelName = prefs.getString(AI_PREF_MODEL_PATH, null)
                             ?.let { java.io.File(it).nameWithoutExtension } ?: selectedMode?.label ?: "Rakhsha AI"
