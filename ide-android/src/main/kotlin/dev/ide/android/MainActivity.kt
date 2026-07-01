@@ -196,9 +196,15 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
+                    // AI entry point pinned to the TOP-right (toolbar area) instead of the bottom,
+                    // where it was overlapping the system nav bar / content ("neeche dab raha tha").
+                    // Uses statusBarsPadding so it sits just under the status bar, not behind it.
                     FloatingActionButton(
                         onClick = { showAi = true },
-                        modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .safeDrawingPadding()
+                            .padding(12.dp),
                         containerColor = MaterialTheme.colorScheme.primary,
                     ) {
                         Text("AI", style = MaterialTheme.typography.labelLarge,
@@ -364,14 +370,33 @@ private fun Splash(message: String) {
 /** Where the AI assistant's connection settings (mode, model path or provider+API key) are remembered
  *  across app restarts, so the user doesn't have to re-pick a model / re-enter an API key every time. */
 
+// --- TEMP DIAGNOSTIC: writes model-load progress to a file the user can open in their file manager
+// at Android/data/com.rakshaai.ide/files/rakshaai_ai_log.txt. Lets us see EXACTLY where the load
+// stalls (native load vs context creation vs an exception) instead of guessing. Remove once fixed.
+private var aiDbgCtx: android.content.Context? = null
+private fun aiDbg(msg: String) {
+    val c = aiDbgCtx ?: return
+    runCatching {
+        val f = java.io.File(c.getExternalFilesDir(null), "rakshaai_ai_log.txt")
+        f.appendText("${System.currentTimeMillis()}  $msg\n")
+    }
+}
+
 private suspend fun loadModelOnThread(path: String): dev.ide.ai.impl.LlamaCppAssistant? =
     kotlinx.coroutines.suspendCancellableCoroutine { cont ->
         val a = dev.ide.ai.impl.LlamaCppAssistant()
         val t = Thread {
             try {
+                val f = java.io.File(path)
+                aiDbg("loadModelOnThread START path=$path exists=${f.exists()} sizeBytes=${if (f.exists()) f.length() else -1}")
+                val t0 = System.currentTimeMillis()
+                aiDbg("calling nativeLoadModel (via a.loadModel) ...")
                 kotlinx.coroutines.runBlocking { a.loadModel(path) }
+                val took = System.currentTimeMillis() - t0
+                aiDbg("a.loadModel RETURNED isReady=${a.isReady} took_ms=$took")
                 if (cont.isActive) cont.resume(if (a.isReady) a else null) {}
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
+                aiDbg("a.loadModel THREW ${e::class.java.simpleName}: ${e.message}")
                 if (cont.isActive) cont.resume(null) {}
             }
         }
@@ -417,6 +442,7 @@ private enum class AiMode(val label: String) {
 @Composable
 private fun RakshaAiOverlay(backend: dev.ide.ui.backend.IdeBackend, onClose: () -> Unit) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
+    androidx.compose.runtime.LaunchedEffect(Unit) { aiDbgCtx = ctx.applicationContext }
     val prefs = remember { ctx.getSharedPreferences(AI_PREFS, android.content.Context.MODE_PRIVATE) }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
 
