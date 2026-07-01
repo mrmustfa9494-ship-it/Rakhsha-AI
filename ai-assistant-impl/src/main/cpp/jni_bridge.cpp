@@ -6,6 +6,7 @@
 #include <android/log.h>
 #include <string>
 #include <vector>
+#include <chrono>
 
 #include "llama.h"
 
@@ -30,8 +31,17 @@ Java_dev_ide_ai_impl_LlamaBridge_nativeLoadModel(
 
     llama_model_params modelParams = llama_model_default_params();
     modelParams.n_gpu_layers = gpuLayers;
+    // Explicit rather than relying on defaults (which have flipped across llama.cpp versions):
+    // mmap the weights so load is a near-instant page-table setup, not a full 1GB read into RAM;
+    // don't mlock (would force-fault every page up-front, defeating the point on a phone).
+    modelParams.use_mmap  = true;
+    modelParams.use_mlock = false;
 
+    auto t0 = std::chrono::steady_clock::now();
     g_model = llama_load_model_from_file(modelPath, modelParams);
+    auto t1 = std::chrono::steady_clock::now();
+    LOGI("llama_load_model_from_file took %lld ms",
+         (long long) std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count());
     env->ReleaseStringUTFChars(jModelPath, modelPath);
 
     if (g_model == nullptr) {
@@ -44,7 +54,11 @@ Java_dev_ide_ai_impl_LlamaBridge_nativeLoadModel(
     ctxParams.n_threads = threads;
     ctxParams.n_threads_batch = threads;
 
+    auto c0 = std::chrono::steady_clock::now();
     g_ctx = llama_new_context_with_model(g_model, ctxParams);
+    auto c1 = std::chrono::steady_clock::now();
+    LOGI("llama_new_context_with_model took %lld ms",
+         (long long) std::chrono::duration_cast<std::chrono::milliseconds>(c1 - c0).count());
     if (g_ctx == nullptr) {
         LOGE("Failed to create context");
         llama_free_model(g_model);
