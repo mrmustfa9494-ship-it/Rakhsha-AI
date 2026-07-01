@@ -28,6 +28,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import kotlin.math.roundToInt
@@ -208,12 +209,12 @@ class MainActivity : ComponentActivity() {
                             .align(Alignment.BottomEnd)
                             .padding(16.dp)
                             .offset { IntOffset(fabOffsetX.roundToInt(), fabOffsetY.roundToInt()) }
-                            .androidx.compose.foundation.gestures.draggable2D(
-                                state = androidx.compose.foundation.gestures.rememberDraggable2DState { delta ->
-                                    fabOffsetX += delta.x
-                                    fabOffsetY += delta.y
+                            .pointerInput(Unit) {
+                                androidx.compose.foundation.gestures.detectDragGestures { _, drag ->
+                                    fabOffsetX += drag.x
+                                    fabOffsetY += drag.y
                                 }
-                            ),
+                            },
                         containerColor = MaterialTheme.colorScheme.primary,
                     ) {
                         Text("AI", style = MaterialTheme.typography.labelLarge,
