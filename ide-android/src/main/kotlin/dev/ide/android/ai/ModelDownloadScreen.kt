@@ -152,7 +152,7 @@ fun ModelDownloadScreen(
                                     Button(
                                         onClick = { onModelReady(installedFiles[model.id]!!) },
                                         modifier = Modifier.weight(1f),
-                                    ) { Text("Load") }
+                                    ) { Text("Load Now") }
                                     OutlinedButton(
                                         onClick = {
                                             scope.launch {

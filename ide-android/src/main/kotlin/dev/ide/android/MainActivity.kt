@@ -541,7 +541,27 @@ private fun RakshaAiAssistantOverlay(backend: IdeBackend, onClose: () -> Unit) {
                         }
                     }
                     if (isLoading) {
-                        CircularProgressIndicator(modifier = Modifier.padding(8.dp))
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+                            horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.padding(8.dp))
+                            Text(
+                                statusMsg,
+                                modifier = Modifier.padding(top = 8.dp),
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            Text(
+                                "This may take 10-30 seconds...",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                modifier = Modifier.padding(top = 4.dp),
+                            )
+                            TextButton(
+                                onClick = { isLoading = false; statusMsg = "Cancelled." },
+                                modifier = Modifier.padding(top = 8.dp),
+                            ) { Text("Cancel") }
+                        }
                     } else when (mode) {
                         AiMode.OFFLINE -> {
                             val savedPath = prefs.getString(AI_PREF_MODEL_PATH, null)
@@ -558,7 +578,7 @@ private fun RakshaAiAssistantOverlay(backend: IdeBackend, onClose: () -> Unit) {
                                         isLoading = false
                                     }
                                 }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
-                                    Text("Load: ${File(savedPath).name}")
+                                    Text("Load Now: ${File(savedPath).name}")
                                 }
                             }
                             dev.ide.android.ai.ModelDownloadScreen(
