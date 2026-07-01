@@ -50,9 +50,61 @@ class OnlineAssistant(private val provider: OnlineProvider) : AiAssistant {
     override val isReady: Boolean get() = !apiKey.isNullOrBlank()
 
     override suspend fun loadModel(modelPath: String, config: ModelConfig) {
-        // Reusing the AiAssistant.loadModel(path, ...) signature: `modelPath` is the API key here, not
-        // a file path. See class doc.
         require(modelPath.isNotBlank()) { "API key is empty." }
+        // Validate the key by sending a minimal test ping (with a short timeout) before
+        // marking isReady = true. This surfaces wrong keys or network errors immediately
+        // instead of hanging silently when the user tries to chat.
+        withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val testMessages = listOf(ChatMessage(ChatMessage.Role.USER, "hi"))
+            val response = when (provider) {
+                OnlineProvider.GEMINI -> {
+                    val url = java.net.URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=$modelPath")
+                    val conn = url.openConnection() as java.net.HttpURLConnection
+                    conn.connectTimeout = 10_000
+                    conn.readTimeout = 15_000
+                    conn.requestMethod = "POST"
+                    conn.doOutput = true
+                    conn.setRequestProperty("Content-Type", "application/json")
+                    val body = org.json.JSONObject().put("contents",
+                        org.json.JSONArray().put(org.json.JSONObject()
+                            .put("role", "user")
+                            .put("parts", org.json.JSONArray().put(org.json.JSONObject().put("text", "hi")))))
+                    java.io.OutputStreamWriter(conn.outputStream, Charsets.UTF_8).use { it.write(body.toString()) }
+                    val code = conn.responseCode
+                    if (code != 200) {
+                        val err = conn.errorStream?.bufferedReader()?.readText() ?: "HTTP $code"
+                        throw Exception("Gemini error $code: ${org.json.JSONObject(err).optJSONArray("error")?.optJSONObject(0)?.optString("message") ?: err.take(200)}")
+                    }
+                    conn.disconnect()
+                    true
+                }
+                OnlineProvider.OPENAI -> {
+                    val url = java.net.URL("https://api.openai.com/v1/models")
+                    val conn = url.openConnection() as java.net.HttpURLConnection
+                    conn.connectTimeout = 10_000; conn.readTimeout = 15_000
+                    conn.setRequestProperty("Authorization", "Bearer $modelPath")
+                    val code = conn.responseCode
+                    if (code != 200) throw Exception("OpenAI error $code — check your API key")
+                    conn.disconnect(); true
+                }
+                OnlineProvider.CLAUDE -> {
+                    val url = java.net.URL("https://api.anthropic.com/v1/messages")
+                    val conn = url.openConnection() as java.net.HttpURLConnection
+                    conn.connectTimeout = 10_000; conn.readTimeout = 15_000
+                    conn.requestMethod = "POST"; conn.doOutput = true
+                    conn.setRequestProperty("Content-Type", "application/json")
+                    conn.setRequestProperty("x-api-key", modelPath)
+                    conn.setRequestProperty("anthropic-version", "2023-06-01")
+                    val body = org.json.JSONObject().put("model", "claude-3-5-sonnet-20241022")
+                        .put("max_tokens", 10)
+                        .put("messages", org.json.JSONArray().put(org.json.JSONObject().put("role", "user").put("content", "hi")))
+                    java.io.OutputStreamWriter(conn.outputStream, Charsets.UTF_8).use { it.write(body.toString()) }
+                    val code = conn.responseCode
+                    if (code != 200) throw Exception("Claude error $code — check your API key")
+                    conn.disconnect(); true
+                }
+            }
+        }
         apiKey = modelPath
     }
 

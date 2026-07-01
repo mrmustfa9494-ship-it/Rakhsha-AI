@@ -537,12 +537,28 @@ private fun RakshaAiOverlay(backend: dev.ide.ui.backend.IdeBackend, onClose: () 
                         modifier = Modifier.padding(bottom = 12.dp))
 
                     if (isLoading) {
-                        // Loading — UI stays alive, Back/Close above still work
+                        var elapsedSecs by remember { mutableStateOf(0) }
+                        androidx.compose.runtime.LaunchedEffect(isLoading) {
+                            while (isLoading) {
+                                kotlinx.coroutines.delay(1000)
+                                elapsedSecs++
+                            }
+                            elapsedSecs = 0
+                        }
                         Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                             CircularProgressIndicator(modifier = Modifier.padding(8.dp))
-                            Text(statusMsg, modifier = Modifier.padding(top = 8.dp))
-                            Text("This may take 30-60 seconds...", style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+                            Text(statusMsg, modifier = Modifier.padding(top = 8.dp),
+                                style = MaterialTheme.typography.bodyMedium)
+                            Text("${elapsedSecs}s elapsed...",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                modifier = Modifier.padding(top = 4.dp))
+                            if (selectedMode == AiMode.OFFLINE) {
+                                Text("Large models take 30-60s on first load.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                    modifier = Modifier.padding(top = 2.dp))
+                            }
                         }
                     } else {
                         if (statusMsg.isNotBlank()) {
@@ -597,7 +613,7 @@ private fun RakshaAiOverlay(backend: dev.ide.ui.backend.IdeBackend, onClose: () 
                                     modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
                                     onClick = {
                                         scope.launch {
-                                            isLoading = true; statusMsg = "Connecting..."
+                                            isLoading = true; statusMsg = "Connecting to ${selectedMode?.label?.substringAfter("-- ") ?: ""}..."
                                             try {
                                                 val provider = when (selectedMode) {
                                                     AiMode.GEMINI -> dev.ide.ai.online.OnlineProvider.GEMINI
@@ -605,14 +621,19 @@ private fun RakshaAiOverlay(backend: dev.ide.ui.backend.IdeBackend, onClose: () 
                                                     else -> dev.ide.ai.online.OnlineProvider.CLAUDE
                                                 }
                                                 val a = dev.ide.ai.online.OnlineAssistant(provider)
-                                                a.loadModel(apiKeyInput)
+                                                // loadModel now does a live test ping — run on IO thread
+                                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                                    a.loadModel(apiKeyInput)
+                                                }
                                                 if (a.isReady) {
                                                     prefs.edit().putString(AI_PREF_MODE, selectedMode!!.name)
                                                         .putString(AI_PREF_PROVIDER, provider.name)
                                                         .putString(AI_PREF_API_KEY, apiKeyInput).apply()
                                                     assistant = a; showScreen = "CHAT"
-                                                } else statusMsg = "Failed to connect."
-                                            } catch (e: Exception) { statusMsg = "Error: ${e.message}" }
+                                                } else statusMsg = "Failed to connect — check your API key."
+                                            } catch (e: Exception) {
+                                                statusMsg = "❌ ${e.message ?: "Connection failed"}"
+                                            }
                                             isLoading = false
                                         }
                                     }) { Text("Connect") }
