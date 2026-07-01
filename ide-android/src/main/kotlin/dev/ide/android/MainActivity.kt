@@ -402,6 +402,15 @@ private fun saveChatMessages(context: android.content.Context, messages: List<de
 }
 
 
+private enum class AiUiState { SELECTING, CONNECTING, CHATTING }
+
+private enum class AiMode(val label: String) {
+    OFFLINE("Offline (on-device model)"),
+    GEMINI("Online -- Google Gemini"),
+    OPENAI("Online -- OpenAI"),
+    CLAUDE("Online -- Anthropic Claude"),
+}
+
 @Composable
 private fun RakshaAiAssistantOverlay(backend: IdeBackend, onClose: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -663,13 +672,4 @@ private fun RakshaAiAssistantOverlay(backend: IdeBackend, onClose: () -> Unit) {
             }
         }
     }
-}
-
-private enum class AiUiState { SELECTING, CONNECTING, CHATTING }
-
-private enum class AiMode(val label: String) {
-    OFFLINE("Offline (on-device model)"),
-    GEMINI("Online -- Google Gemini"),
-    OPENAI("Online -- OpenAI"),
-    CLAUDE("Online -- Anthropic Claude"),
 }
