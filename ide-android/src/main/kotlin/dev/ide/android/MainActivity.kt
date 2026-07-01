@@ -694,6 +694,7 @@ private fun RakshaAiOverlay(backend: dev.ide.ui.backend.IdeBackend, onClose: () 
                             onMessagesChanged = { msgs ->
                                 scope.launch(kotlinx.coroutines.Dispatchers.IO) { saveMessages(ctx, msgs) }
                             },
+                            onDbg = { m -> aiDbg(m) },
                         )
                     }
                 }

@@ -71,7 +71,10 @@ fun AiChatScreen(
     availableModels: List<Pair<String, String>> = emptyList(),
     /** Called when user picks a different model from the dropdown. */
     onSwitchModel: (id: String) -> Unit = {},
+    /** TEMP diagnostic sink to localise where composition stalls. */
+    onDbg: (String) -> Unit = {},
 ) {
+    onDbg("chat: body START")
     val messages = remember {
         mutableStateListOf<TimestampedMessage>().apply {
             addAll(initialMessages.map { TimestampedMessage(it) })
@@ -80,8 +83,11 @@ fun AiChatScreen(
     var input by remember { mutableStateOf("") }
     var isGenerating by remember { mutableStateOf(false) }
     var targetFilePath by remember { mutableStateOf(backend.project.rootPath.trimEnd('/') + "/") }
+    onDbg("chat: rootPath read OK")
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
+    onDbg("chat: state init OK")
+    androidx.compose.runtime.LaunchedEffect(Unit) { onDbg("chat: FIRST-FRAME effect ran") }
 
     // Auto-scroll to bottom when new message arrives
     LaunchedEffect(messages.size) {
