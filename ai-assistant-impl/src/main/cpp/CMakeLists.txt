@@ -11,8 +11,17 @@ set(CMAKE_CXX_STANDARD 17)
 # which ships release-optimized native libs, loads an 8GB model smoothly).
 # Redefining the *_DEBUG flag variables here (before add_subdirectory) forces -O3 onto llama.cpp/ggml
 # too, regardless of the debug/release variant AGP picks.
-set(CMAKE_C_FLAGS_DEBUG   "-O3 -DNDEBUG" CACHE STRING "" FORCE)
-set(CMAKE_CXX_FLAGS_DEBUG "-O3 -DNDEBUG" CACHE STRING "" FORCE)
+# The earlier per-DEBUG-flag override didn't reliably reach ggml's compute kernels, which is why the
+# model *loaded* fast (0.6s) but *inference* was ~0.3 tok/s (a full reply took ~an hour). Two real
+# causes, both fixed below:
+#   1) optimization: add_compile_options(-O3 -DNDEBUG) is applied to THIS directory and every
+#      add_subdirectory() below it (llama.cpp + ggml), and lands AFTER any -O0 the Debug config adds,
+#      so -O3 wins no matter which build type AGP picks.
+#   2) ARM SIMD: quantized (Q4_K_M) matmul on arm64 is 10-20x faster with the dotprod instructions.
+#      This module is arm64-v8a only (see build.gradle abiFilters), so enabling armv8.2-a+dotprod is
+#      safe for every realistic modern phone. This is the same class of CPU acceleration MNN / Google
+#      AI Edge use to run big models smoothly.
+add_compile_options(-O3 -DNDEBUG -march=armv8.2-a+dotprod)
 # ------------------------------------------------------------------------------------------------
 
 # llama.cpp itself is NOT vendored in this repo (it's a large, separately-versioned C++ project). Add it

@@ -49,7 +49,7 @@ class LlamaCppAssistant : AiAssistant {
         // and stream pieces back into the Flow via trySend — this is the standard callbackFlow bridge
         // pattern for a synchronous, callback-driven native API.
         withContext(Dispatchers.IO) {
-            bridge.nativeGenerate(prompt, maxTokens = 1024, temperature = config.temperature) { token ->
+            bridge.nativeGenerate(prompt, maxTokens = 512, temperature = config.temperature) { token ->
                 val sendResult = trySend(token)
                 sendResult.isSuccess // false (stop) only if the Flow's collector cancelled
             }
