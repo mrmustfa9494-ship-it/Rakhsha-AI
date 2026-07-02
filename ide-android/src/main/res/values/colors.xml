@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- New app-icon background (was purple #5B3FA0). Change this hex to recolour the launcher icon. -->
-    <color name="ic_launcher_bg">#303F9F</color>
+    <!-- App-icon background behind the teal glyph. Change this hex to recolour the launcher background. -->
+    <color name="ic_launcher_bg">#12262B</color>
 </resources>

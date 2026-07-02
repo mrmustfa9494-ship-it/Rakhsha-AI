@@ -516,7 +516,7 @@ private fun RakshaAiOverlay(backend: dev.ide.ui.backend.IdeBackend, onClose: () 
                     }) { Text("← Back") }
                 } else Text("  ")
                 Text("Rakhsha AI", style = MaterialTheme.typography.titleLarge)
-                androidx.compose.material3.TextButton(onClick = onClose) { Text("Close") }
+                androidx.compose.material3.TextButton(onClick = onClose) { Text("Go to Project") }
             }
             androidx.compose.material3.HorizontalDivider()
 

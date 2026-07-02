@@ -118,24 +118,68 @@ Java_dev_ide_ai_impl_LlamaBridge_nativeGenerate(
     llama_sampler_chain_add(sampler, llama_sampler_init_temp(temperature));
     llama_sampler_chain_add(sampler, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
 
+    // Streamed generation with a STOP-STRING guard. Some models (e.g. DeepSeek-R1-Distill) do NOT
+    // register the ChatML turn markers as EOG tokens, so relying only on llama_vocab_is_eog let the
+    // model loop forever emitting "<|im_end|><|im_start|>assistant...". We accumulate the output and
+    // stop at the first turn/end marker for ANY model, and never emit the marker text itself. A short
+    // tail is held back each step so a marker split across tokens is caught before it leaks to the UI.
+    std::string acc;
+    size_t emitted = 0;
+    static const char* kStops[] = { "<|im_end|>", "<|im_start|>", "<|endoftext|>", "<\xef\xbd\x9c" };
+    const size_t kMaxStopLen = 12;
+
+    auto findStop = [&](const std::string& text) -> size_t {
+        size_t best = std::string::npos;
+        for (const char* st : kStops) {
+            size_t pos = text.find(st);
+            if (pos != std::string::npos && (best == std::string::npos || pos < best)) best = pos;
+        }
+        return best;
+    };
+
     for (int i = 0; i < maxTokens; i++) {
         llama_token nextToken = llama_sampler_sample(sampler, g_ctx, -1);
         if (llama_vocab_is_eog(vocab, nextToken)) break;
 
         char piece[256];
         int n = llama_token_to_piece(vocab, nextToken, piece, sizeof(piece), 0, true);
-        jstring jPiece = env->NewStringUTF(std::string(piece, n).c_str());
+        if (n > 0) acc.append(piece, (size_t) n);
 
-        jobject result = env->CallObjectMethod(onToken, invoke, jPiece);
-        bool keepGoing = env->CallBooleanMethod(result, boolValue);
-        env->DeleteLocalRef(jPiece);
-        env->DeleteLocalRef(result);
-        if (!keepGoing) break;
+        size_t stopPos = findStop(acc);
+        size_t safe = (stopPos != std::string::npos)
+                        ? stopPos
+                        : (acc.size() > kMaxStopLen ? acc.size() - kMaxStopLen : emitted);
+
+        if (safe > emitted) {
+            std::string chunk = acc.substr(emitted, safe - emitted);
+            emitted = safe;
+            jstring jPiece = env->NewStringUTF(chunk.c_str());
+            jobject result = env->CallObjectMethod(onToken, invoke, jPiece);
+            bool keepGoing = result ? env->CallBooleanMethod(result, boolValue) : true;
+            env->DeleteLocalRef(jPiece);
+            if (result) env->DeleteLocalRef(result);
+            if (!keepGoing) break;
+        }
+
+        if (stopPos != std::string::npos) break;
 
         llama_batch nextBatch = llama_batch_get_one(&nextToken, 1);
         if (llama_decode(g_ctx, nextBatch) != 0) {
             LOGE("llama_decode failed during generation");
             break;
+        }
+    }
+
+    // Flush any held-back tail that isn't part of a stop marker.
+    {
+        size_t stopPos = findStop(acc);
+        size_t endPos = (stopPos == std::string::npos) ? acc.size() : stopPos;
+        if (endPos > emitted) {
+            std::string chunk = acc.substr(emitted, endPos - emitted);
+            jstring jPiece = env->NewStringUTF(chunk.c_str());
+            jobject result = env->CallObjectMethod(onToken, invoke, jPiece);
+            env->DeleteLocalRef(jPiece);
+            if (result) env->DeleteLocalRef(result);
         }
     }
 
