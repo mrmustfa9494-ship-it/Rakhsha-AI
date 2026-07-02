@@ -190,26 +190,18 @@ class MainActivity : ComponentActivity() {
 
                     var showAi by remember { mutableStateOf(false) }
 
+                    // Wire the top-bar AI button (dev.ide.ui.components.AiLauncher, inside EditorChrome)
+                    // to open the overlay. The old floating button is gone — the entry point now lives
+                    // in the IDE's own top bar, so it never overlaps the toolbar/system bars.
+                    androidx.compose.runtime.DisposableEffect(Unit) {
+                        dev.ide.ui.components.AiLauncher.open = { showAi = true }
+                        onDispose { dev.ide.ui.components.AiLauncher.open = null }
+                    }
+
                     if (showAi) {
                         androidx.compose.material3.Surface(modifier = Modifier.fillMaxSize()) {
                             RakshaAiOverlay(backend = b, onClose = { showAi = false })
                         }
-                    }
-
-                    // AI entry point pinned to the TOP-right (toolbar area) instead of the bottom,
-                    // where it was overlapping the system nav bar / content ("neeche dab raha tha").
-                    // Uses statusBarsPadding so it sits just under the status bar, not behind it.
-                    FloatingActionButton(
-                        onClick = { showAi = true },
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .safeDrawingPadding()
-                            .padding(12.dp),
-                        containerColor = MaterialTheme.colorScheme.primary,
-                    ) {
-                        Text("AI", style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onPrimary,
-                            fontWeight = FontWeight.Bold)
                     }
                 }
 

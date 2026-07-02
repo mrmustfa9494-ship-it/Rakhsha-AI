@@ -51,6 +51,7 @@ import dev.ide.ai.AiAssistant
 import dev.ide.ai.ChatMessage
 import dev.ide.ui.backend.IdeBackend
 import dev.ide.ui.backend.UiSeverity
+import dev.ide.ui.backend.RunStatus
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -178,10 +179,18 @@ fun AiChatScreen(
             onClick = {
                 scope.launch {
                     isGenerating = true
-                    val errors = backend.build.buildState.value.diagnostics
-                        .filter { it.severity == UiSeverity.Error }
+                    val bs = backend.build.buildState.value
+                    val errors = bs.diagnostics.filter { it.severity == UiSeverity.Error }
+                    val warns = bs.diagnostics.filter { it.severity == UiSeverity.Warning }
                     val reply = if (errors.isEmpty()) {
-                        "No build errors right now. Run a build first to check for errors."
+                        if (bs.status == RunStatus.Failed) {
+                            "Build **FAILED** — but there are ${warns.size} warning(s) and no error-level " +
+                            "messages captured. The usual cause is a Kotlin-metadata / d8-r8 version mismatch " +
+                            "(the \"Unexpected error during rewriting of Kotlin metadata\" warnings). " +
+                            "Open Build > Log, copy the FIRST real failing line, paste it here and I'll give the exact fix."
+                        } else {
+                            "No build errors right now. Run a build first to check for errors."
+                        }
                     } else {
                         val byFile = errors.filter { it.file != null }.groupBy { it.file!! }
                         buildString {
@@ -384,7 +393,7 @@ private fun MessageBubble(tm: TimestampedMessage, onInsert: (String) -> Unit) {
                 )
                 if (!isUser) {
                     TextButton(
-                        onClick = { clip.setText(androidx.compose.ui.text.AnnotatedString(msg.content)) },
+                        onClick = { clip.setText(androidx.compose.ui.text.AnnotatedString(extractCodeBlock(msg.content) ?: msg.content)) },
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp, vertical = 0.dp),
                     ) {
                         Text("Copy", style = MaterialTheme.typography.labelSmall,

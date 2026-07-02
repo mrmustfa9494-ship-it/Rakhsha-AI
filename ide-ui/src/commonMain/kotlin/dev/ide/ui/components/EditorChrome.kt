@@ -66,6 +66,14 @@ import dev.ide.ui.icons.actionIcon
 import dev.ide.ui.theme.Ca
 
 /**
+ * Bridge so the AI chat overlay — which is owned by the Android app layer (MainActivity), one level
+ * ABOVE this shared IDE chrome — can be opened from a button inside the top bar, without threading an
+ * onAskAi callback down through every composable in between. MainActivity assigns [open]; the top-bar
+ * AI button just invokes it. Null-safe: if nothing is wired, the button is a no-op.
+ */
+object AiLauncher { var open: (() -> Unit)? = null }
+
+/**
  * Top bar (glass-regular), pared back to the essentials: sidebar toggle · project name · index status ·
  * save · command palette · console · Run. The project tile lives in the side rail; theme toggle and
  * re-index moved to the command palette (and rail Settings) — they were redundant here.
@@ -121,6 +129,18 @@ fun EditorTopBar(
             IndexStatusChip(indexStatus, compact = compact, onClick = onIndexClick)
             // Accent-tinted while there are unsaved changes; saves the active tab (Cmd/Ctrl-S also works).
             IconButtonCa(CaIcons.save, "Save", onSave, active = hasUnsavedChanges)
+            // Rakhsha AI entry point. Lives in the top bar (next to Save) so it never overlaps content
+            // or the system bars the way the old floating button did. Opens the AI chat overlay.
+            Text(
+                "AI",
+                color = Ca.colors.textPrimary,
+                style = Ca.type.subhead,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { AiLauncher.open?.invoke() }
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+            )
             if (compact) {
                 // On a phone the bar can't hold every control, so Run stays inline and the rest (incl. the
                 // edit actions) collapse into a single ⋯ overflow menu — everything one tap away.
