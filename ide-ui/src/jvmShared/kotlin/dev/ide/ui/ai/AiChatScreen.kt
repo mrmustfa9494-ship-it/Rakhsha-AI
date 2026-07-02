@@ -490,8 +490,21 @@ private fun isNoteMsg(m: ChatMessage): Boolean {
 }
 
 private fun extractCodeBlock(text: String): String? {
-    val start = text.indexOf("```").takeIf { it >= 0 } ?: return null
-    val afterFence = text.indexOf('\n', start).takeIf { it >= 0 } ?: return null
-    val end = text.indexOf("```", afterFence).takeIf { it >= 0 } ?: return null
-    return text.substring(afterFence + 1, end).trimEnd()
+    // 1) A ``` fenced block. Small models sometimes forget the CLOSING fence, so if there's an opening
+    //    fence but no closing one, take everything after the opener.
+    val start = text.indexOf("```")
+    if (start >= 0) {
+        val afterFence = text.indexOf('\n', start)
+        if (afterFence >= 0) {
+            val end = text.indexOf("```", afterFence + 1)
+            val inner = if (end >= 0) text.substring(afterFence + 1, end) else text.substring(afterFence + 1)
+            val trimmed = inner.trim()
+            if (trimmed.isNotEmpty()) return trimmed
+        }
+    }
+    // 2) No fence at all, but the model emitted a "// FILE: <path>" directive (very common with small
+    //    models) — treat everything from that line to the end as the code block so Insert/Copy still show.
+    val fileIdx = text.indexOf("// FILE:")
+    if (fileIdx >= 0) return text.substring(fileIdx).trim()
+    return null
 }
