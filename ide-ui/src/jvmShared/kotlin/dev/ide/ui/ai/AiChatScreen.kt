@@ -89,11 +89,25 @@ fun AiChatScreen(
     // right after the chat screen started composing. We now start empty and fill the target path
     // from a background thread, so composition never blocks.
     var targetFilePath by remember { mutableStateOf("") }
+    var projectCtx by remember { mutableStateOf<String?>(null) }
     androidx.compose.runtime.LaunchedEffect(Unit) {
-        val root = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            runCatching { backend.project.rootPath.trimEnd('/') + "/" }.getOrDefault("")
+        val pair = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                val p = backend.project
+                val root = p.rootPath.trimEnd('/') + "/"
+                val ctx = "You are Rakhsha AI, a coding assistant working INSIDE the Android project " +
+                    "\"${p.name}\" (root: ${p.rootPath}, ${p.moduleCount} module(s)). When the user says " +
+                    "\"the project\" or \"this project\", they mean THIS one - never ask which project. " +
+                    "Write Kotlin/Android code for it. To create or replace a file, make the FIRST line of your " +
+                    "code block exactly:  // FILE: <relative/path/from/project/root>  and the IDE will create it. " +
+                    "Be concise and code-focused."
+                root to ctx
+            }.getOrNull()
         }
-        if (root.isNotEmpty()) targetFilePath = root
+        if (pair != null) {
+            if (pair.first.isNotEmpty()) targetFilePath = pair.first
+            projectCtx = pair.second
+        }
         onDbg("chat: rootPath read OK (async)")
     }
     val scope = rememberCoroutineScope()
@@ -113,7 +127,9 @@ fun AiChatScreen(
             isGenerating = true
             val replyIndex = messages.size
             messages.add(TimestampedMessage(ChatMessage(ChatMessage.Role.ASSISTANT, "")))
-            assistant.chat(messages.map { it.msg }).collect { token ->
+            val outgoing = (projectCtx?.let { listOf(ChatMessage(ChatMessage.Role.SYSTEM, it)) } ?: emptyList()) +
+                messages.map { it.msg }
+            assistant.chat(outgoing).collect { token ->
                 val current = messages[replyIndex]
                 messages[replyIndex] = current.copy(msg = current.msg.copy(content = current.msg.content + token))
             }
@@ -231,19 +247,27 @@ fun AiChatScreen(
                     tm = tm,
                     onInsert = { code ->
                         scope.launch {
-                            // saveFile needs a FILE path; if the target is blank or a directory,
-                            // write to a default file so Insert never silently no-ops.
-                            val target = targetFilePath.let {
-                                if (it.isBlank() || it.endsWith("/")) it.trimEnd('/') + "/AiGenerated.kt" else it
+                            // Honour an explicit "// FILE: <path>" first line from the model; otherwise use the
+                            // target-file field. Create the file for real via the IDE's FileService so it shows
+                            // up in the project tree (falling back to editor.saveFile).
+                            val firstLine = code.lineSequence().firstOrNull()?.trim().orEmpty()
+                            val hint = Regex("""// *FILE: *(.+)""").find(firstLine)?.groupValues?.get(1)?.trim()
+                            val bodyText = if (hint != null) code.substringAfter('\n', "") else code
+                            val rootDir = targetFilePath.trimEnd('/')
+                            val full = when {
+                                hint == null -> if (targetFilePath.isBlank() || targetFilePath.endsWith("/")) "$rootDir/AiGenerated.kt" else targetFilePath
+                                hint.startsWith("/") -> hint
+                                else -> "$rootDir/$hint"
                             }
-                            val ok = runCatching {
-                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                    backend.editor.saveFile(target, code)
-                                }
-                            }.isSuccess
+                            val dir = full.substringBeforeLast('/')
+                            val name = full.substringAfterLast('/')
+                            val ok = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                val created = runCatching { backend.files.createFile(dir, name, bodyText) }.getOrNull()
+                                created != null || runCatching { backend.editor.saveFile(full, bodyText); true }.getOrDefault(false)
+                            }
                             messages.add(TimestampedMessage(ChatMessage(ChatMessage.Role.ASSISTANT,
-                                if (ok) "✓ Inserted code into: $target"
-                                else "✗ Couldn't insert. Type a valid file path in 'Insert target file' above.")))
+                                if (ok) "✓ Created/updated file in project: $full"
+                                else "✗ Couldn't write the file. Check the target path above.")))
                             onMessagesChanged(messages.map { it.msg })
                         }
                     }

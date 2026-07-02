@@ -224,15 +224,10 @@ fun RakshaAiApp(
                                         onSubmitSuggestions = if (fileActions.canOpenUrl) {
                                             { fileActions.openUrl(BetaInfo.FEEDBACK_URL) }
                                         } else null,
-                                        onJoinDiscord = if (fileActions.canOpenUrl) {
-                                            { fileActions.openUrl(BetaInfo.DISCORD_URL) }
-                                        } else null,
-                                        onSponsor = if (fileActions.canOpenUrl) {
-                                            { fileActions.openUrl(BetaInfo.SPONSOR_URL) }
-                                        } else null,
-                                        onStarOnGitHub = if (fileActions.canOpenUrl) {
-                                            { fileActions.openUrl(BetaInfo.REPO_URL) }
-                                        } else null,
+                                        // Support / Star / Discord promo cards removed at user's request.
+                                        onJoinDiscord = null,
+                                        onSponsor = null,
+                                        onStarOnGitHub = null,
                                         storagePath = backend.projects.storageRootPath(),
                                         onOpenInFiles = if (fileActions.canReveal) {
                                             { backend.projects.storageRootPath()?.let { fileActions.reveal(it) } }
