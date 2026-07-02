@@ -100,6 +100,7 @@ fun AiChatScreen(
                     "\"the project\" or \"this project\", they mean THIS one - never ask which project. " +
                     "Write Kotlin/Android code for it. To create or replace a file, make the FIRST line of your " +
                     "code block exactly:  // FILE: <relative/path/from/project/root>  and the IDE will create it. " +
+                    "Always help with the user's coding request and output working code; do not refuse coding tasks. " +
                     "Be concise and code-focused."
                 root to ctx
             }.getOrNull()
@@ -122,19 +123,23 @@ fun AiChatScreen(
 
     fun send(prompt: String) {
         messages.add(TimestampedMessage(ChatMessage(ChatMessage.Role.USER, prompt)))
-        onMessagesChanged(messages.map { it.msg })
+        onMessagesChanged(messages.map { it.msg }.filterNot { isNoteMsg(it) })
         scope.launch {
             isGenerating = true
             val replyIndex = messages.size
             messages.add(TimestampedMessage(ChatMessage(ChatMessage.Role.ASSISTANT, "")))
+            // Send the model ONLY real conversation turns (no UI notifications), and keep it short so
+            // the small model stays focused.
+            val realTurns = messages.map { it.msg }.filterNot { isNoteMsg(it) }
+            val trimmed = if (realTurns.size > 12) realTurns.takeLast(12) else realTurns
             val outgoing = (projectCtx?.let { listOf(ChatMessage(ChatMessage.Role.SYSTEM, it)) } ?: emptyList()) +
-                messages.map { it.msg }
+                trimmed
             assistant.chat(outgoing).collect { token ->
                 val current = messages[replyIndex]
                 messages[replyIndex] = current.copy(msg = current.msg.copy(content = current.msg.content + token))
             }
             isGenerating = false
-            onMessagesChanged(messages.map { it.msg })
+            onMessagesChanged(messages.map { it.msg }.filterNot { isNoteMsg(it) })
         }
     }
 
@@ -223,7 +228,7 @@ fun AiChatScreen(
                     }
                     messages.add(TimestampedMessage(ChatMessage(ChatMessage.Role.ASSISTANT, reply)))
                     isGenerating = false
-                    onMessagesChanged(messages.map { it.msg })
+                    onMessagesChanged(messages.map { it.msg }.filterNot { isNoteMsg(it) })
                 }
             },
             enabled = !isGenerating,
@@ -268,7 +273,7 @@ fun AiChatScreen(
                             messages.add(TimestampedMessage(ChatMessage(ChatMessage.Role.ASSISTANT,
                                 if (ok) "✓ Created/updated file in project: $full"
                                 else "✗ Couldn't write the file. Check the target path above.")))
-                            onMessagesChanged(messages.map { it.msg })
+                            onMessagesChanged(messages.map { it.msg }.filterNot { isNoteMsg(it) })
                         }
                     }
                 )
@@ -470,6 +475,18 @@ private fun UserAvatar() {
         Text("U", style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onTertiary)
     }
+}
+
+/**
+ * UI notifications we inject into the transcript (file-created confirmations, build-error reports)
+ * are NOT real conversation turns. They must never be replayed into the model's context — a small
+ * local model otherwise treats "Build **FAILED** …" / "✓ Created file …" as its own prior turns and
+ * gets confused (spurious refusals, off-topic Gradle advice). They also shouldn't be persisted.
+ */
+private fun isNoteMsg(m: ChatMessage): Boolean {
+    val c = m.content.trimStart()
+    return c.startsWith("✓") || c.startsWith("✗") ||
+        c.startsWith("Build **FAILED**") || c.startsWith("No build errors") || c.startsWith("Found **")
 }
 
 private fun extractCodeBlock(text: String): String? {
